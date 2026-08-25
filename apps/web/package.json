@@ -1,0 +1,44 @@
+{
+  "name": "@floatchat/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "@tanstack/react-query": "^5.50.0",
+    "maplibre-gl": "^4.7.0",
+    "recharts": "^2.12.0",
+    "plotly.js": "^2.30.0",
+    "react-plotly.js": "^2.6.0",
+    "zod": "^3.23.0",
+    "lucide-react": "^0.400.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.4.0",
+    "date-fns": "^3.6.0",
+    "@floatchat/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-plotly.js": "^2.6.0",
+    "typescript": "^5.5.0",
+    "tailwindcss": "^4.0.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.0.0",
+    "jest": "^29.7.0",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/jest-dom": "^6.4.0"
+  }
+}
