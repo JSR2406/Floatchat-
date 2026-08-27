@@ -18,16 +18,16 @@ class Settings(BaseSettings):
     supabase_service_key: str = ""
     supabase_storage_bucket: str = "floatchat-data"
 
-    # LLM
-    llm_provider: str = "openai"
+    # LLM - OpenRouter for free tier access
+    llm_provider: str = "openrouter"
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "anthropic/claude-3.5-sonnet"  # Best free tier model on OpenRouter
     llm_temperature: float = 0.1
 
-    # Voice Providers
+    # Voice Providers - Sarvam + ElevenLabs for free tier
     stt_provider: str = "sarvam"
     stt_api_key: str = ""
-    tts_provider: str = "sarvam"
+    tts_provider: str = "elevenlabs"
     tts_api_key: str = ""
     translation_provider: str = "google"
     translation_api_key: str = ""
