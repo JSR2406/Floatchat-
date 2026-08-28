@@ -27,6 +27,8 @@ class Intent(str, Enum):
     MARINE_CONDITION_BRIEFING = "marine_condition_briefing"
     DATASET_EXPLANATION = "dataset_explanation"
     EXPORT_RESULTS = "export_results"
+    ROUTE_ANALYSIS = "route_analysis"
+    HAZARD_ASSESSMENT = "hazard_assessment"
 
 
 class RegionType(str, Enum):

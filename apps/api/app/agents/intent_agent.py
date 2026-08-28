@@ -41,13 +41,20 @@ class IntentAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("intent_agent")
-        self.client = AsyncOpenAI(api_key=settings.llm_api_key)
-        self.model = settings.llm_model
+        # Demo mode: no API key required
+        self.demo_mode = not settings.llm_api_key
+        if not self.demo_mode:
+            self.client = AsyncOpenAI(api_key=settings.llm_api_key)
+            self.model = settings.llm_model
+        else:
+            self.client = None
+            self.model = "demo"
         
         # Register tools
         self.register_tool("extract_intent", self._extract_intent)
         self.register_tool("extract_entities", self._extract_entities)
         self.register_tool("parse_time", self._parse_time)
+        self.register_tool("parse_coordinates", self._parse_coordinates)
         self.register_tool("parse_coordinates", self._parse_coordinates)
     
     def get_required_inputs(self) -> List[str]:
@@ -114,17 +121,6 @@ Output a JSON object with the QueryPlanResponse schema."""
         if plan_result.status == "needs_clarification":
             context.add_warning(f"Clarification needed: {plan_result.clarification_question}")
         
-        # Record provenance
-        self.provenance_service.record_execution(
-            query_run_id=context.query_run_id,
-            agent_name=self.name,
-            tool_name="plan_query",
-            input_bundles=[],
-            output_bundles=[],  # No evidence bundles produced
-            execution_time_ms=0,  # Will be updated by orchestrator
-            status="success" if plan_result.status == "ready" else "clarification",
-        )
-        
         return []
     
     def get_required_inputs(self) -> List[str]:
@@ -142,6 +138,10 @@ Output a JSON object with the QueryPlanResponse schema."""
         # Detect language if not provided
         if language is None:
             language = self._detect_language(message)
+        
+        # Demo mode: return deterministic responses without LLM
+        if self.demo_mode:
+            return self._demo_plan_query(message, language)
         
         # Build user prompt
         user_prompt = f"""User message: "{message}"
@@ -208,8 +208,80 @@ Convert this to a structured query. If mandatory parameters are missing (especia
         if any('\u0600' <= c <= '\u06ff' for c in text):
             return "ur-IN"
         return "en-IN"
-    
-    # --- Tool implementations ---
+
+    def _demo_plan_query(self, message: str, language: str) -> QueryPlanResponse:
+        """Deterministic demo query planning without LLM."""
+        message_lower = message.lower()
+        
+        # Determine intent based on keywords
+        if any(kw in message_lower for kw in ["temperature", "salinity", "conditions", "show"]):
+            intent = Intent.PROFILE_SEARCH
+        elif any(kw in message_lower for kw in ["anomal", "unusual", "abnormal"]):
+            intent = Intent.ANOMALY_DETECTION
+        elif any(kw in message_lower for kw in ["route", "travel", "safe", "mumbai", "goa"]):
+            intent = Intent.ROUTE_ANALYSIS
+        elif any(kw in message_lower for kw in ["compare", "baseline", "historical"]):
+            intent = Intent.ANOMALY_DETECTION
+        elif any(kw in message_lower for kw in ["what if", "scenario", "departure", "speed"]):
+            intent = Intent.SCENARIO_PROJECTION
+        elif any(kw in message_lower for kw in ["alert", "warning", "cyclone"]):
+            intent = Intent.HAZARD_ASSESSMENT
+        elif any(kw in message_lower for kw in ["evidence", "proof", "source"]):
+            intent = Intent.PROFILE_SEARCH  # fallback
+        else:
+            intent = Intent.PROFILE_SEARCH
+        
+        # Determine region
+        region = None
+        if "arabian" in message_lower:
+            from app.schemas.query import NamedRegion
+            region = NamedRegion(type="named_region", name="arabian_sea")
+        elif "mumbai" in message_lower or "goa" in message_lower:
+            from app.schemas.query import RouteRegion, Coordinate
+            region = RouteRegion(
+                type="route",
+                origin=Coordinate(lat=19.0760, lon=72.8777),
+                destination=Coordinate(lat=15.2993, lon=74.1240),
+            )
+        elif "kerala" in message_lower:
+            from app.schemas.query import NamedRegion
+            region = NamedRegion(type="named_region", name="kerala_coast")
+        elif "bay of bengal" in message_lower or "bengal" in message_lower:
+            from app.schemas.query import NamedRegion
+            region = NamedRegion(type="named_region", name="bay_of_bengal")
+        
+        # Parse time if mentioned
+        time_range = None
+        if "tomorrow" in message_lower:
+            from app.schemas.query import TimeRange
+            from datetime import datetime, timedelta
+            tomorrow = datetime.now() + timedelta(days=1)
+            time_range = TimeRange(start=tomorrow.strftime("%Y-%m-%d"), end=tomorrow.strftime("%Y-%m-%d"))
+        
+        # Build structured query
+        structured_query = StructuredQuery(
+            intent=Intent.PROFILE_SEARCH,
+            language=SupportedLanguage(language) if language in [l.value for l in SupportedLanguage] else SupportedLanguage.EN_IN,
+            region=region,
+            time_range=time_range,
+            variables=["temperature", "salinity"] if "temperature" in message_lower or "salinity" in message_lower else None,
+        )
+        
+        # Determine if clarification needed
+        clarification = None
+        if intent == Intent.ROUTE_ANALYSIS and not message_lower.__contains__("to"):
+            clarification = "Please specify origin and destination for route analysis."
+        
+        return QueryPlanResponse(
+            status="ready" if not clarification else "needs_clarification",
+            intent=intent,
+            language=SupportedLanguage(language) if language in [l.value for l in SupportedLanguage] else SupportedLanguage.EN_IN,
+            query=structured_query,
+            clarification_question=clarification,
+            warnings=[],
+        )
+
+# --- Tool implementations ---
     
     async def _extract_intent(
         self,

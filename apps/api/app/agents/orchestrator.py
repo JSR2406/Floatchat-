@@ -29,6 +29,8 @@ class Orchestrator(BaseAgent):
     
     def __init__(self):
         super().__init__("orchestrator")
+        from app.agents import _register_default_agents
+        _register_default_agents()
         self.registry = get_agent_registry()
         self.fusion_engine = get_fusion_engine()
         self.provenance_service = get_provenance_service()

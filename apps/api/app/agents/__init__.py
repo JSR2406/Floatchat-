@@ -10,6 +10,8 @@ from uuid import uuid4
 from dataclasses import dataclass, field
 from enum import Enum
 
+logger = logging.getLogger(__name__)
+
 # Define SourceType locally to avoid circular imports
 class SourceType(str, Enum):
     ARGO = "argo"
@@ -69,7 +71,7 @@ class ExecutionContext:
             "error": error,
             "timestamp": datetime.utcnow().isoformat(),
         })
-        logger.warning(f"Agent {agent} error in {tool}: {error}")
+        logging.getLogger(__name__).warning(f"Agent {agent} error in {tool}: {error}")
     
     def add_warning(self, warning: str):
         self.warnings.append(warning)
@@ -213,5 +215,26 @@ def get_agent_registry() -> AgentRegistry:
     return _agent_registry
 
 
+# Auto-register default agents
+def _register_default_agents() -> AgentRegistry:
+    registry = get_agent_registry()
+    # Check if already registered
+    if registry.get("intent_agent") is not None:
+        return registry
+    
+    # Import here to avoid circular imports
+    from app.agents.intent_agent import IntentAgent
+    from app.agents.scenario_agent import ScenarioAgent
+    from app.agents.route_agent import RouteAgent
+    from app.agents.geofence_agent import GeofenceAgent
+    
+    registry.register(IntentAgent())
+    registry.register(ScenarioAgent())
+    registry.register(RouteAgent())
+    registry.register(GeofenceAgent())
+    
+    return registry
+
+
 # Export
-__all__ = ["BaseAgent", "ExecutionContext", "AgentRegistry", "get_agent_registry", "SourceType"]
+__all__ = ["BaseAgent", "ExecutionContext", "AgentRegistry", "get_agent_registry", "SourceType", "_register_default_agents"]
