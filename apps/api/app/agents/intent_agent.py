@@ -214,18 +214,19 @@ Convert this to a structured query. If mandatory parameters are missing (especia
         message_lower = message.lower()
         
         # Determine intent based on keywords
-        if any(kw in message_lower for kw in ["temperature", "salinity", "conditions", "show"]):
-            intent = Intent.PROFILE_SEARCH
-        elif any(kw in message_lower for kw in ["anomal", "unusual", "abnormal"]):
+        # Check anomaly-related keywords first (before route keywords)
+        if any(kw in message_lower for kw in ["anomal", "unusual", "abnormal"]):
+            intent = Intent.ANOMALY_DETECTION
+        elif any(kw in message_lower for kw in ["alert", "warning", "cyclone"]):
+            intent = Intent.HAZARD_ASSESSMENT
+        elif any(kw in message_lower for kw in ["what if", "scenario", "departure", "speed"]):
+            intent = Intent.SCENARIO_PROJECTION
+        elif any(kw in message_lower for kw in ["compare", "baseline", "historical"]):
             intent = Intent.ANOMALY_DETECTION
         elif any(kw in message_lower for kw in ["route", "travel", "safe", "mumbai", "goa"]):
             intent = Intent.ROUTE_ANALYSIS
-        elif any(kw in message_lower for kw in ["compare", "baseline", "historical"]):
-            intent = Intent.ANOMALY_DETECTION
-        elif any(kw in message_lower for kw in ["what if", "scenario", "departure", "speed"]):
-            intent = Intent.SCENARIO_PROJECTION
-        elif any(kw in message_lower for kw in ["alert", "warning", "cyclone"]):
-            intent = Intent.HAZARD_ASSESSMENT
+        elif any(kw in message_lower for kw in ["temperature", "salinity", "conditions", "show"]):
+            intent = Intent.PROFILE_SEARCH
         elif any(kw in message_lower for kw in ["evidence", "proof", "source"]):
             intent = Intent.PROFILE_SEARCH  # fallback
         else:
@@ -260,7 +261,7 @@ Convert this to a structured query. If mandatory parameters are missing (especia
         
         # Build structured query
         structured_query = StructuredQuery(
-            intent=Intent.PROFILE_SEARCH,
+            intent=intent,
             language=SupportedLanguage(language) if language in [l.value for l in SupportedLanguage] else SupportedLanguage.EN_IN,
             region=region,
             time_range=time_range,
