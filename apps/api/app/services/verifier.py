@@ -2,7 +2,7 @@
 # Proof-carrying verification: checks every numeric claim against actual query results
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from app.schemas.evidence import EvidenceRecord, NumericClaim, VerificationResult
 
 logger = logging.getLogger(__name__)

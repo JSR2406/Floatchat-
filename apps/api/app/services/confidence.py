@@ -55,7 +55,7 @@ class ConfidenceCalculator:
         )
 
     def _calc_spatial_coverage(self) -> float:
-        """How well do the floats cover the requested region?""
+        """How well do the floats cover the requested region?"""
         if not self.profiles:
             return 0.0
 
@@ -96,7 +96,7 @@ class ConfidenceCalculator:
         return 0.5
 
     def _calc_temporal_freshness(self) -> float:
-        """How recent is the data?""
+        """How recent is the data?"""
         freshness = self.evidence.get("data_freshness", {})
         days_old = freshness.get("days_old", 999)
         source = freshness.get("source", "unknown")
@@ -120,7 +120,7 @@ class ConfidenceCalculator:
             return 0.1
 
     def _calc_sample_density(self) -> float:
-        """Are there enough profiles/observations for statistical significance?""
+        """Are there enough profiles/observations for statistical significance?"""
         profile_count = self.metadata.get("profile_count", 0)
         obs_count = self.metadata.get("observation_count", 0)
         float_count = self.metadata.get("float_count", 0)
@@ -152,7 +152,7 @@ class ConfidenceCalculator:
         return (profile_score + float_score) / 2
 
     def _calc_measurement_quality(self) -> float:
-        """Quality of measurements (QC flags, completeness)."" 
+        """Quality of measurements (QC flags, completeness)."""
         if not self.profiles:
             return 0.0
 
@@ -181,7 +181,7 @@ class ConfidenceCalculator:
         return base_score * (0.5 + 0.5 * completeness)
 
     def _calc_method_stability(self) -> float:
-        """Stability of the analysis method (fixed for deterministic queries)."" 
+        """Stability of the analysis method (fixed for deterministic queries)."""
         # For deterministic query tools, method stability is high
         intent = self.evidence.get("intent", "unknown")
         if intent in ["profile_search", "timeseries_summary", "depth_profile_summary"]:

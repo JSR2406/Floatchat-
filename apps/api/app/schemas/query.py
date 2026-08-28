@@ -7,9 +7,15 @@ from enum import Enum
 
 class SupportedLanguage(str, Enum):
     EN_IN = "en-IN"
-    ML_IN = "ml-IN"
     HI_IN = "hi-IN"
+    ML_IN = "ml-IN"
+    TA_IN = "ta-IN"
+    TE_IN = "te-IN"
+    BN_IN = "bn-IN"
+    GU_IN = "gu-IN"
     MR_IN = "mr-IN"
+    OR_IN = "or-IN"
+    KN_IN = "kn-IN"
 
 
 class Intent(str, Enum):
