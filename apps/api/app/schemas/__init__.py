@@ -22,6 +22,11 @@ from app.schemas.evidence import (
     VerificationResult,
 )
 
+from app.schemas.provenance import (
+    EvidenceBundle,
+    DataFreshness,
+)
+
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
@@ -41,10 +46,56 @@ from app.schemas.risk import (
 )
 
 from app.schemas.scenario import (
-    ScenarioProjectRequest,
-    ScenarioResponse,
-    ScenarioProjection,
-    HistoricalTrend,
+    ScenarioType,
+    ScenarioParameter,
+    ScenarioRequest,
+    ScenarioResult,
+    ScenarioComparison,
+    AlertSeverity,
+    AlertStatus,
+    AlertRule,
+    AlertEvent,
+)
+
+from app.schemas.provenance import (
+    EvidenceBundle,
+    ProvenanceRecord,
+    SourceType,
+    DataFreshness,
+    SourceHealth,
+    ProvenanceQuery,
+    GeoJSONGeometry,
+    EvidenceBundle as ProvenanceEvidenceBundle,
+)
+
+from app.schemas.route import (
+    RouteAnalysisRequest,
+    RouteAnalysisResponse,
+    RouteMode,
+    VesselType,
+    EnvironmentalConditions,
+    HazardIntersection,
+    GeofenceIntersection,
+    RouteSegment,
+    RiskAssessment,
+)
+
+from app.schemas.marine import (
+    MarineConditionRequest,
+    MarineConditionResponse,
+    MarineConditionType,
+    MarineHazard,
+    MarineForecast,
+    MarineConditions,
+)
+
+from app.schemas.hazard import (
+    HazardType,
+    HazardSeverity,
+    HazardArea,
+    HazardWarning,
+    HazardComparison,
+    HazardReport,
 )
 
 __all__ = [
@@ -67,6 +118,8 @@ __all__ = [
     "ConfidenceComponents",
     "NumericClaim",
     "VerificationResult",
+    "EvidenceBundle",
+    "DataFreshness",
     # Chat
     "ChatRequest",
     "ChatResponse",
@@ -82,8 +135,45 @@ __all__ = [
     "RiskComponent",
     "RiskBriefingResponse",
     # Scenario
-    "ScenarioProjectRequest",
-    "ScenarioResponse",
-    "ScenarioProjection",
-    "HistoricalTrend",
+    "ScenarioType",
+    "ScenarioParameter",
+    "ScenarioRequest",
+    "ScenarioResult",
+    "ScenarioComparison",
+    "AlertSeverity",
+    "AlertStatus",
+    "AlertRule",
+    "AlertEvent",
+    # Provenance
+    "ProvenanceEvidenceBundle",
+    "ProvenanceRecord",
+    "SourceType",
+    "DataFreshness",
+    "SourceHealth",
+    "ProvenanceQuery",
+    "GeoJSONGeometry",
+    # Route
+    "RouteAnalysisRequest",
+    "RouteAnalysisResponse",
+    "RouteMode",
+    "VesselType",
+    "EnvironmentalConditions",
+    "HazardIntersection",
+    "GeofenceIntersection",
+    "RouteSegment",
+    "RiskAssessment",
+    # Marine
+    "MarineConditionRequest",
+    "MarineConditionResponse",
+    "MarineConditionType",
+    "MarineHazard",
+    "MarineForecast",
+    "MarineConditions",
+    # Hazard
+    "HazardType",
+    "HazardSeverity",
+    "HazardArea",
+    "HazardWarning",
+    "HazardComparison",
+    "HazardReport",
 ]

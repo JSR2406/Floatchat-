@@ -22,6 +22,13 @@ from app.services.voice_providers import (
     COASTAL_LANGUAGE_CODES,
     COASTAL_LANGUAGE_NAMES,
 )
+# Agent imports removed to avoid circular imports
+# Import directly from agent modules when needed:
+# from app.agents.intent_agent import IntentAgent
+# from app.agents.orchestrator import Orchestrator, get_orchestrator
+# from app.agents.scenario_agent import ScenarioAgent, get_scenario_agent
+# from app.agents.route_agent import RouteAgent, get_route_agent
+# from app.agents.geofence_agent import GeofenceAgent, get_geofence_agent
 
 __all__ = [
     "get_query_planner",
