@@ -38,7 +38,8 @@ def upgrade() -> None:
     if _is_postgresql():
         geom_type = geoalchemy2.types.Geography(
             geometry_type='POINT', srid=4326, dimension=2,
-            from_text='ST_GeogFromText', name='geography', nullable=False
+            from_text='ST_GeogFromText', name='geography', nullable=False,
+            spatial_index=False
         )
     else:
         geom_type = sa.Text()

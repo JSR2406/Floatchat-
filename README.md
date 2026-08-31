@@ -1,13 +1,13 @@
 # 🌊 ORCA - Ocean Reasoning, Coordination & Analytics Platform
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Tests](https://img.shields.io/badge/tests-24%20passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110.1-green)]()
 [![Next.js](https://img.shields.io/badge/Next.js-15-black)]()
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-blue)]()
+[![PostGIS](https://img.shields.io/badge/PostGIS-3.4-green)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 
-**ORCA** (Ocean Reasoning, Coordination & Analytics) is a competition-grade 2026 marine intelligence platform that autonomously combines heterogeneous marine data sources, performs deterministic spatial-temporal reasoning, produces transparent risk assessments, and returns evidence-backed recommendations for marine operations.
+**ORCA** (Ocean Reasoning, Coordination & Analytics) is a production-oriented marine intelligence platform that combines heterogeneous marine data sources, performs deterministic spatial-temporal reasoning, produces transparent risk assessments, and returns evidence-backed recommendations for marine operations.
 
 ---
 
@@ -20,17 +20,17 @@
 - **ScenarioAgent** - What-if projections (departure time, route variants, weather, speed)
 - **GeofenceAgent** - EEZ, MPA, restricted zone compliance checking
 
-### 🌊 Marine Data Fusion
-- **ARGO Profiles** - 1,184 profiles / 35,520 observations (cached Parquet)
-- **Weather** - Wind, air temp, precipitation via Sarvam AI
-- **Waves** - Height, period, direction via Sarvam AI
-- **Currents** - Surface/subsurface via ElevenLabs
-- **Hazards** - Cyclones, storms, warnings, geofences
+### 🌊 Marine Data Integration
+- **ARGO Profiles** - Real-time data via argopy (GDAC/ERDDAP)
+- **Weather** - Wind, air temperature, precipitation
+- **Waves** - Height, period, direction
+- **Currents** - Surface/subsurface current data
+- **Hazards** - Cyclones, storms, warnings
 - **Geofences** - EEZ boundaries, MPAs, restricted zones
 
 ### 🧠 Deterministic Reasoning
 - **SpatialReasoner** - PostGIS operations (distance, bearing, bbox, buffer, point-in-polygon)
-- **TemporalReasoner** - Deterministic relative time parsing (today, tomorrow, this week, last month, seasons)
+- **TemporalReasoner** - Deterministic relative time parsing
 - **RiskEngine** - Transparent scoring (wave 35%, wind 30%, current 15%, hazard 15%, geofence 5%)
 - **DataFusionEngine** - Multi-source evidence aggregation with conflict detection
 
@@ -54,8 +54,8 @@
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 15+ with PostGIS
-- (Optional) Supabase account for managed DB
+- PostgreSQL 15+ with PostGIS extension
+- (Optional) Supabase/Neon for managed PostgreSQL
 
 ### Backend Setup
 ```bash
@@ -72,9 +72,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your API keys and DB connection
 
-# Run database migrations (if using Supabase)
-# Or run locally with Docker:
-docker-compose up -d postgres
+# Run database migrations
+alembic -c alembic.ini upgrade head
 
 # Start backend
 uvicorn app.main:app --reload --port 8000
@@ -94,6 +93,9 @@ npm run dev
 ### Environment Variables
 Create `.env` from `.env.example`:
 ```bash
+# Database - PostgreSQL with PostGIS
+DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/floatchat
+
 # LLM Provider (OpenRouter for free tier)
 LLM_PROVIDER=openrouter
 LLM_API_KEY=your_openrouter_key
@@ -107,41 +109,15 @@ TTS_API_KEY=your_elevenlabs_key
 TRANSLATION_PROVIDER=google
 TRANSLATION_API_KEY=your_google_key
 
-# Database
-DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/floatchat
-SUPABASE_URL=
-SUPABASE_SERVICE_KEY=
-
 # Server
 HOST=0.0.0.0
 PORT=8000
-DEMO_MODE=false
-CACHED_DATA_PATH=/app/data/cached
+CORS_ORIGINS=["http://localhost:3000"]
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
 ```
-
----
-
-## 🎯 10 Flagship Demo Queries (All Offline-Ready)
-
-| # | Query | Category | Expected Intent |
-|---|-------|----------|-----------------|
-| 1 | "Show temperature and salinity conditions in the Arabian Sea." | Profile Search | `profile_search` |
-| 2 | "Find anomalous ocean conditions near Mumbai." | Anomaly Detection | `anomaly_detection` |
-| 3 | "Is it safe to travel from Mumbai to Goa tomorrow morning?" | Route Analysis | `route_analysis` |
-| 4 | "Why is this route marked moderate risk?" | Risk Reasoning | `marine_condition_briefing` |
-| 5 | "Show me the evidence used for that decision." | Evidence Verification | `evidence_verification` |
-| 6 | "Compare tomorrow with the historical baseline." | Comparison | `anomaly_detection` |
-| 7 | "What happens if the departure time changes?" | Scenario Projection | `scenario_projection` |
-| 8 | "अरब सागर में तापमान और लवणता की स्थिति दिखाएं" (Hindi) | Multilingual | `profile_search` |
-| 9 | "അറബിക്കടലിൽ താപനിലയും ലവണതവും കാണിക്കൂ" (Malayalam) | Multilingual | `profile_search` |
-| 10 | "Trigger an alert for cyclone conditions near Kerala coast" | Alert Management | `hazard_assessment` |
-
-### Run Offline Demo
-```bash
-cd apps/api
-python app/demo/run_offline_demo.py
-```
-> Executes all 10 queries offline in ~5 seconds, saves results to `app/demo/output/`
 
 ---
 
@@ -159,7 +135,8 @@ orca/
 │   │   │   ├── services/       # RiskEngine, SpatialReasoner, TemporalReasoner, DataFusion, Provenance
 │   │   │   ├── db/             # SQLAlchemy + PostGIS models
 │   │   │   └── main.py         # FastAPI app entry
-│   │   └── requirements.txt
+│   │   ├── requirements.txt
+│   │   └── alembic.ini         # Database migrations
 │   │
 │   └── web/                    # Next.js 15 Frontend
 │       ├── app/                # App Router pages
@@ -173,13 +150,9 @@ orca/
 ├── packages/
 │   └── shared-types/           # TypeScript/Python shared schemas
 │
-├── data/
-│   ├── cached/                 # Parquet cache (ARGO profiles/observations)
-│   └── sample/                 # Demo data & demo_manifest.json
-│
 ├── docs/                       # Architecture, API contracts, data dictionary, safety policy
-├── tests/                      # Unit + Integration tests (24 passing)
-└── scripts/                    # Demo runner, cache generator
+├── tests/                      # Unit tests
+└── .github/workflows/          # CI/CD pipelines
 ```
 
 ---
@@ -228,6 +201,11 @@ POST   /api/v1/alerts/events/{id}/resolve
 POST   /api/v1/alerts/check              # Manual alert check
 ```
 
+### Health
+```
+GET    /api/v1/health              # Health check
+```
+
 ---
 
 ## 🧪 Testing
@@ -238,9 +216,6 @@ pytest tests/ -v
 
 # Unit tests only
 pytest tests/test_unit.py -v
-
-# Integration tests only
-pytest tests/test_integration.py -v
 
 # Run specific test
 pytest tests/test_unit.py::TestRiskEngine::test_elevated_risk_conditions -v
@@ -253,11 +228,9 @@ pytest tests/test_unit.py::TestRiskEngine::test_elevated_risk_conditions -v
 ### Definition of Done (Vertical Slice)
 - ✅ `GET /health` returns 200
 - ✅ `POST /api/v1/chat` returns structured query + map + charts + evidence card
-- ✅ Offline mode works with cached Parquet
 - ✅ No unverified numeric claims in response
 - ✅ All charts show units, sample counts, date ranges
-- ✅ 24/24 tests passing (17 unit + 7 integration)
-- ✅ 10/10 flagship queries execute offline in ~5s
+- ✅ Unit tests passing
 
 ### Safety & Compliance
 - **Official Warning Disclaimer** - All risk outputs include disclaimer
@@ -298,7 +271,10 @@ apps/api/app/
 │   ├── temporal_reasoner.py     # Deterministic time parsing
 │   ├── data_fusion.py           # Multi-source evidence fusion
 │   ├── provenance.py            # Audit trails & lineage
-│   ├── data_fusion.py           # Multi-source aggregation
+│   ├── verifier.py              # Numeric claim verification
+│   ├── confidence.py            # Confidence scoring
+│   ├── query_planner.py         # NL → StructuredQuery
+│   ├── query_executor.py        # SQL execution
 │   └── voice_providers.py       # STT/TTS/Translation interfaces
 ├── schemas/
 │   ├── query.py           # StructuredQuery, Intent, Region types
@@ -315,13 +291,20 @@ apps/api/app/
 
 ## 🚢 Deployment
 
+### Database (Supabase/Neon)
+```sql
+-- Enable PostGIS
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+
+-- Run migrations via alembic
+alembic -c apps/api/alembic.ini upgrade head
+```
+
 ### Backend (Railway/Render/Fly.io)
 ```bash
-# Build
-docker build -t orca-api ./apps/api
-
-# Deploy with env vars
-fly deploy --app orca-api
+# Set environment variables in platform dashboard
+# Deploy from GitHub repo (apps/api subdirectory)
 ```
 
 ### Frontend (Vercel)
@@ -330,27 +313,16 @@ cd apps/web
 vercel --prod
 ```
 
-### Database (Supabase/Neon)
-```sql
--- Enable PostGIS
-CREATE EXTENSION IF NOT EXISTS postgis;
-
--- Run migrations
-psql $DATABASE_URL -f apps/api/app/db/migrations/001_initial_schema.sql
-```
-
 ---
 
 ## 📚 Documentation
 
 | Document | Location |
 |----------|----------|
-| Architecture Delta | `docs/architecture_delta.md` |
-| Architecture Diagram | `docs/architecture.md` |
+| Architecture | `docs/architecture.md` |
 | API Contracts | `docs/api-contract.md` |
 | Data Dictionary | `docs/data-dictionary.md` |
 | Safety Policy | `docs/safety.md` |
-| Reuse Audit | `docs/reuse-audit.md` |
 
 ---
 

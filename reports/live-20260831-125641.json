@@ -1,0 +1,531 @@
+{
+  "generated_at": "2026-08-31T12:56:41Z",
+  "mode": "opt-in acceptance (RUN_LIVE_ACCEPTANCE=1)",
+  "database": {
+    "layer": "database",
+    "source": "postgres",
+    "status": "UNAVAILABLE",
+    "detail": "gaierror(11001, 'getaddrinfo failed')",
+    "latency_ms": null
+  },
+  "sources": [
+    {
+      "source": "incois",
+      "name": "INCOIS",
+      "kind": "ocean observations",
+      "driver": "http-adapter",
+      "status": "CONFIGURATION_REQUIRED",
+      "latency_ms": null,
+      "detail": "incois_enabled is disabled"
+    },
+    {
+      "source": "imd",
+      "name": "IMD",
+      "kind": "weather observations",
+      "driver": "http-adapter",
+      "status": "CONFIGURATION_REQUIRED",
+      "latency_ms": null,
+      "detail": "imd_enabled is disabled"
+    },
+    {
+      "source": "mosdac",
+      "name": "MOSDAC",
+      "kind": "satellite ocean products",
+      "driver": "http-adapter",
+      "status": "CONFIGURATION_REQUIRED",
+      "latency_ms": null,
+      "detail": "mosdac_enabled is disabled"
+    },
+    {
+      "source": "nho",
+      "name": "NHO",
+      "kind": "charting / harbour restrictions",
+      "driver": "deterministic TemporaryClosureAdapter",
+      "status": "CONFIGURATION_REQUIRED",
+      "latency_ms": null,
+      "detail": "no live feed configured; current driver is deterministic TemporaryClosureAdapter"
+    },
+    {
+      "source": "navarea-viii",
+      "name": "NAVAREA VIII",
+      "kind": "navigational warnings",
+      "driver": "deterministic NavareaAdvisoryAdapter",
+      "status": "CONFIGURATION_REQUIRED",
+      "latency_ms": null,
+      "detail": "no live feed configured; current driver is deterministic NavareaAdvisoryAdapter"
+    },
+    {
+      "source": "navtex",
+      "name": "NAVTEX",
+      "kind": "broadcast safety messages",
+      "driver": "no registered adapter (feed via NHO/NAVAREA restricted)",
+      "status": "CONFIGURATION_REQUIRED",
+      "latency_ms": null,
+      "detail": "no live feed configured; current driver is no registered adapter (feed via NHO/NAVAREA restricted)"
+    }
+  ],
+  "policy": {
+    "provenance_chain": "user -> orchestrator -> agent -> MCP tool -> marine service -> adapter -> source (e.g. INCOIS retrieved at <source_timestamp>)",
+    "freshness_labels": [
+      "LIVE",
+      "RECENT",
+      "STALE",
+      "EXPIRED",
+      "UNAVAILABLE"
+    ],
+    "live_only_if_verified": true,
+    "cache_is_never_live": true,
+    "replay_label": "REPLAY / HISTORICAL DEMONSTRATION"
+  },
+  "demo_rows": [
+    {
+      "id": "demo-a-safe-to-go-kochi",
+      "message": "Is it safe to fish near Kochi?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "safety",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [
+        "safety verdict unavailable: safety data not returned",
+        "risk could not be assessed (UNKNOWN)"
+      ],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.917545+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "demo-b-best-fishing-zone",
+      "message": "Where is the best fishing zone near Kochi?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "fishing",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.923007+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "demo-c-restrictions-here",
+      "message": "Are there any restrictions near Kochi?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "briefing",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 1,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.924967+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "demo-d-safest-route",
+      "message": "Plan the safest route from Visakhapatnam to Chennai; avoid restricted water.",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "safety",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [
+        "safety verdict unavailable: safety data not returned",
+        "risk could not be assessed (UNKNOWN)"
+      ],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.926907+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "demo-e-productivity-decline",
+      "message": "Fishing productivity has declined here; what is the trend?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "fishing",
+      "language": "en-IN",
+      "result_status": "needs_input",
+      "risk_status": null,
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "n/a",
+      "verification": null,
+      "freshness": null,
+      "latency_ms": 0,
+      "tool_calls": 0,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {},
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "golden-pfz",
+      "message": "Where's the best fishing zone near Kochi?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "fishing",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.931020+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "golden-safe-to-go",
+      "message": "Is it safe to fish near Kochi?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "safety",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [
+        "safety verdict unavailable: safety data not returned",
+        "risk could not be assessed (UNKNOWN)"
+      ],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.932970+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "golden-active-restriction",
+      "message": "Are there active restrictions near Mumbai?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "briefing",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 1,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.934915+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "golden-safest-route",
+      "message": "What is the safest route from Goa to Mumbai?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "safety",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [
+        "safety verdict unavailable: safety data not returned",
+        "risk could not be assessed (UNKNOWN)"
+      ],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.936907+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "golden-productivity",
+      "message": "Show fishing productivity near Chennai",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "fishing",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.940001+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "multi-pfz-tomorrow:turn1",
+      "message": "Where is the best fishing zone near Kochi?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "fishing",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.942004+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "multi-pfz-tomorrow:turn2",
+      "message": "Is it safe to fish 20 km south of Kochi tomorrow?",
+      "data_basis": "OFFLINE TEST FIXTURE / context-merged",
+      "intent": "fishing",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.942004+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "multi-6am-9am:turn1",
+      "message": "Is it safe to fish at 6 AM near Mumbai?",
+      "data_basis": "OFFLINE TEST FIXTURE",
+      "intent": "safety",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [
+        "safety verdict unavailable: safety data not returned",
+        "risk could not be assessed (UNKNOWN)"
+      ],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.943909+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    },
+    {
+      "id": "multi-6am-9am:turn2",
+      "message": "What about 9 AM?",
+      "data_basis": "OFFLINE TEST FIXTURE / context-merged",
+      "intent": "safety",
+      "language": "en-IN",
+      "result_status": "aborted",
+      "risk_status": "insufficient_data",
+      "risk_level": "unknown",
+      "hard_constraint": false,
+      "safety_state_note": "insufficient_data",
+      "verification": null,
+      "freshness": {
+        "overall": "unknown",
+        "threshold_seconds": null,
+        "per_source": {}
+      },
+      "latency_ms": 0,
+      "tool_calls": 2,
+      "tools_used": [],
+      "limitations": [
+        "safety verdict unavailable: safety data not returned",
+        "risk could not be assessed (UNKNOWN)"
+      ],
+      "evidence_items": 0,
+      "provenance": {
+        "generated_at": "2026-08-31T07:26:41.943909+00:00",
+        "sources": []
+      },
+      "error": null,
+      "merged_from_context": false
+    }
+  ],
+  "multi_turn": [
+    {
+      "id": "multi-pfz-tomorrow:turn2",
+      "merged_from_context": false
+    },
+    {
+      "id": "multi-6am-9am:turn2",
+      "merged_from_context": false
+    }
+  ],
+  "stream": {
+    "label": "REPLAY / HISTORICAL DEMONSTRATION",
+    "event_count": 14,
+    "events": [
+      "execution.started",
+      "intent.detected",
+      "plan.created",
+      "task.started",
+      "task.started",
+      "tool.started",
+      "tool.failed",
+      "tool.started",
+      "tool.failed",
+      "task.failed",
+      "task.failed",
+      "execution.completed",
+      "execution.timings",
+      "response.ready"
+    ],
+    "vocabulary_ok": false,
+    "chain_of_thought_leaked": false
+  }
+}

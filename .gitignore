@@ -63,3 +63,11 @@ dev.py
 data/cached/*.parquet
 data/cached/*.json
 !data/cached/.gitkeep
+node_modules
+node_modules
+
+# Web build artifacts
+apps/web/.next/
+apps/web/next-env.d.ts
+*.tsbuildinfo
+*.tsbuildinfo.*

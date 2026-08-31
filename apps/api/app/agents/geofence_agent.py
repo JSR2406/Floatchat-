@@ -22,10 +22,15 @@ class GeofenceAgent(BaseAgent):
     - Environmental protection areas
     """
     
-    def __init__(self):
+    def __init__(self, capability=None):
         super().__init__("geofence_agent")
         self.spatial = get_spatial_reasoner()
         self.provenance = get_provenance_service()
+        if capability is None:
+            from app.services.marine_capability_client import get_marine_capability_client
+            capability = get_marine_capability_client()
+        self._capability = capability
+        self._live_source = False
     
     def get_required_inputs(self) -> List[str]:
         return []
@@ -54,7 +59,7 @@ class GeofenceAgent(BaseAgent):
             return [self._create_error_response("No geofence request found")]
         
         try:
-            return await self._check_geofence_compliance(context)
+            return [await self._check_geofence_compliance(context)]
         except Exception as e:
             return [self._create_error_response(str(e))]
     
@@ -88,43 +93,63 @@ class GeofenceAgent(BaseAgent):
         violations = []
         compliance_status = "compliant"
         confidence = 1.0
-        
-        # In a full implementation, would check against actual geospatial databases:
-        # - EEZ boundaries (World EEZ shapes)
-        # - MPA boundaries
-        # - Restricted military areas
-        # - Traffic separation schemes
-        # - Environmental protection areas
-        
-        # Demo: Check for known areas in the Indian Ocean region
-        demo_areas = self._get_demo_geofences()
-        
-        for area in demo_areas:
-            area_geom = shape(area['geometry']) if isinstance(area['geometry'], str) else Polygon(area['geometry'])
-            
-            # Check if line intersects or is within the area
-            intersects = line.intersects(area_geom)
-            within = line.within(area_geom)
-            
-            if intersects or within:
-                # Calculate intersection details
-                centroid = area_geom.centroid
-                nearest_point = line.interpolate(line.project(centroid), normalized=True)
-                
-                violation_type = area.get('violation_type', 'entry')
-                
-                violation = GeofenceIntersection(
-                    geofence_id=area['id'],
-                    geofence_name=area['name'],
-                    violation_type=violation_type,
-                    location={"lat": nearest_point.y, "lon": nearest_point.x},
-                    severity=self._severity_from_area_type(area.get('type', 'restricted')),
-                    description=area.get('description', f"Passing through {area['name']}"),
-                )
-                violations.append(violation)
-                
+        reasoning_note = ""
+
+        # Live restricted areas first (never fabricated: source must be configured).
+        route_latlon = [[pt['lat'], pt['lon']] for pt in route_geometry]
+        restrictions_env = await self._capability.restrictions_near_route(route_latlon)
+        active_areas = []
+        if restrictions_env.get("available"):
+            live_intersections = (restrictions_env.get("data") or {}).get("intersections") or []
+            active_areas = [
+                {
+                    "id": area.get("area_id"),
+                    "name": area.get("area_name"),
+                    "type": "restricted",
+                    "description": f"Restricted area ({area.get('restriction_type')})",
+                    "severity": self._severity_from_area_type(
+                        area.get("restriction_kind") or "restricted"),
+                }
+                for area in live_intersections
+                if area.get("status") == "active"
+            ]
+            if active_areas:
+                self._live_source = True
                 compliance_status = "violation"
                 confidence = 0.9
+                reasoning_note = f"Live marine data (sources: {', '.join(restrictions_env.get('sources') or [])})"
+        else:
+            reasoning_note = "No live marine data configured; demo geofences only"
+
+        # Fallback: demo areas when the marine source is not configured.
+        if not active_areas:
+            demo_areas = self._get_demo_geofences()
+            for area in demo_areas:
+                area_geom = shape(area['geometry']) if isinstance(area['geometry'], str) else Polygon(area['geometry'])
+                if line.intersects(area_geom) or line.within(area_geom):
+                    active_areas.append(area)
+
+        for area in active_areas:
+            if isinstance(area.get('geometry'), str) or (isinstance(area.get('geometry'), list)):
+                area_geom = shape(area['geometry']) if isinstance(area['geometry'], str) else Polygon(area['geometry'])
+                centroid = area_geom.centroid
+            else:
+                centroid = line.centroid
+            nearest_point = line.interpolate(line.project(centroid), normalized=True)
+
+            violation_type = area.get('violation_type', 'enter')
+            if violation_type not in ("enter", "exit", "pass"):
+                violation_type = "enter"
+            violations.append(GeofenceIntersection(
+                geofence_id=area['id'],
+                geofence_name=area['name'],
+                violation_type=violation_type,
+                location={"lat": nearest_point.y, "lon": nearest_point.x},
+                severity=area.get("severity") or self._severity_from_area_type(area.get('type', 'restricted')),
+                description=area.get('description', f"Passing through {area['name']}"),
+            ))
+            compliance_status = "violation"
+            confidence = 0.9
         
         # Record provenance
         self.provenance.record_execution(
@@ -143,7 +168,11 @@ class GeofenceAgent(BaseAgent):
             "restricted_zone_intersections": [v for v in violations if v.severity in ["high", "moderate"]],
             "eez_violations": [v for v in violations if "eez" in v.geofence_name.lower()],
             "mpa_violations": [v for v in violations if "mpa" in v.geofence_name.lower() or "protected" in v.geofence_name.lower()],
-            "reasoning": f"Checked {len(route_geometry)} route points against {len(demo_areas)} geofence areas",
+            "source": "live_marine" if self._live_source else "demo_geofences",
+            "reasoning": (
+                reasoning_note if reasoning_note else
+                f"Checked {len(route_geometry)} route points against {len(active_areas)} geofence areas"
+            ),
             "confidence": confidence,
         }
     
@@ -200,3 +229,5 @@ def get_geofence_agent() -> GeofenceAgent:
     if _geofence_agent is None:
         _geofence_agent = GeofenceAgent()
     return _geofence_agent
+
+    

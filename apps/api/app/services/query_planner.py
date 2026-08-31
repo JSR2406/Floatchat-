@@ -32,6 +32,8 @@ class QueryPlanner:
     """Plans structured queries from natural language using LLM."""
 
     def __init__(self):
+        if not settings.llm_api_key:
+            raise ValueError("LLM API key is required. Set LLM_API_KEY environment variable.")
         self.client = AsyncOpenAI(api_key=settings.llm_api_key)
         self.model = settings.llm_model
 
@@ -83,11 +85,9 @@ Output a JSON object with the QueryPlanResponse schema."""
 
     async def plan_query(self, message: str, language: Optional[str] = None) -> QueryPlanResponse:
         """Plan a structured query from user message."""
-        # Detect language if not provided
         if language is None:
             language = self._detect_language(message)
 
-        # Build user prompt
         user_prompt = f"""User message: "{message}"
 Detected language: {language}
 Current date: {datetime.now().strftime('%Y-%m-%d')}
@@ -110,14 +110,7 @@ Convert this to a structured query. If mandatory parameters are missing (especia
 
         except Exception as e:
             logger.error(f"Query planning failed: {e}")
-            return QueryPlanResponse(
-                status="unsupported",
-                intent=Intent.PROFILE_SEARCH,
-                language=SupportedLanguage(language) if language in [l.value for l in SupportedLanguage] else SupportedLanguage.EN_IN,
-                query=StructuredQuery(intent=Intent.PROFILE_SEARCH, language=SupportedLanguage.EN_IN),
-                clarification_question=None,
-                warnings=[f"Planning error: {str(e)}"],
-            )
+            raise
 
     def _detect_language(self, text: str) -> str:
         """Simple language detection for Indian languages."""
@@ -126,7 +119,6 @@ Convert this to a structured query. If mandatory parameters are missing (especia
             return "ml-IN"
         # Check for Devanagari (Hindi/Marathi)
         if any('\u0900' <= c <= '\u097f' for c in text):
-            # Could distinguish Hindi vs Marathi with more logic
             return "hi-IN"
         return "en-IN"
 
@@ -137,8 +129,7 @@ Convert this to a structured query. If mandatory parameters are missing (especia
         """Parse relative time expressions like 'last month', 'July 2025', 'tomorrow'."""
         text_lower = text.lower()
         today = datetime.now()
-        
-        # This is simplified - in production use a proper date parser
+
         if "tomorrow" in text_lower:
             tomorrow = today + timedelta(days=1)
             return TimeRange(start=tomorrow.strftime("%Y-%m-%d"), end=tomorrow.strftime("%Y-%m-%d"))
@@ -153,7 +144,7 @@ Convert this to a structured query. If mandatory parameters are missing (especia
             end = first_this_month - timedelta(days=1)
             start = end.replace(day=1)
             return TimeRange(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
-        
+
         return None
 
 

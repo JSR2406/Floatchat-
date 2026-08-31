@@ -23,7 +23,6 @@ from app.schemas.query import (
     QualityFilter,
 )
 from app.config import settings
-from app.data.cache import get_cache_manager
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,6 @@ class QueryExecutor:
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.cache = get_cache_manager() if settings.demo_mode else None
 
     # --- QC Filter Helpers ---
 
@@ -225,8 +223,6 @@ class QueryExecutor:
 
     async def compare_baseline(self, query: StructuredQuery) -> Dict[str, Any]:
         """Compare analysis period against baseline period."""
-        # This would need reference_period and analysis_period in query
-        # For MVP, return not implemented
         return {"error": "compare_baseline not yet implemented"}
 
     async def detect_anomaly(self, query: StructuredQuery) -> Dict[str, Any]:

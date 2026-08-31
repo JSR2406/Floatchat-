@@ -38,31 +38,26 @@ class IntentAgent(BaseAgent):
     Extracts intent, entities, and structured parameters from natural language queries.
     Uses LLM for NLU with deterministic post-processing for dates/coordinates.
     """
-    
+
     def __init__(self):
         super().__init__("intent_agent")
-        # Demo mode: no API key required
-        self.demo_mode = not settings.llm_api_key
-        if not self.demo_mode:
-            self.client = AsyncOpenAI(api_key=settings.llm_api_key)
-            self.model = settings.llm_model
-        else:
-            self.client = None
-            self.model = "demo"
-        
+        if not settings.llm_api_key:
+            raise ValueError("LLM API key is required. Set LLM_API_KEY environment variable.")
+        self.client = AsyncOpenAI(api_key=settings.llm_api_key)
+        self.model = settings.llm_model
+
         # Register tools
         self.register_tool("extract_intent", self._extract_intent)
         self.register_tool("extract_entities", self._extract_entities)
         self.register_tool("parse_time", self._parse_time)
         self.register_tool("parse_coordinates", self._parse_coordinates)
-        self.register_tool("parse_coordinates", self._parse_coordinates)
-    
+
     def get_required_inputs(self) -> List[str]:
         return []
-    
+
     def get_output_types(self) -> List[SourceType]:
         return []
-    
+
     # System prompt for structured query generation
     SYSTEM_PROMPT = """You are an intent classifier and entity extractor for ORCA, a marine intelligence platform.
 Your job is to convert user questions into structured queries for oceanographic data retrieval.
@@ -71,13 +66,13 @@ SUPPORTED INTENTS:
 1. profile_search - Search for ARGO profiles by region, time, depth, variables
 2. timeseries_summary - Get time series statistics (mean, min, max, count) for a variable
 3. depth_profile_summary - Get depth-binned statistics (profiles grouped by depth)
-3. anomaly_detection - Compare current period against a baseline period
-4. scenario_projection - Project a trend forward with uncertainty
-5. marine_condition_briefing - Get ocean conditions for a route/region (waves, wind, currents, warnings)
-6. route_analysis - Analyze a vessel route for safety and conditions
-7. hazard_assessment - Check for hazards (cyclones, warnings, geofences) in an area
-8. dataset_explanation - Explain dataset coverage, variables, quality
-9. export_results - Export query results as CSV
+4. anomaly_detection - Compare current period against a baseline period
+5. scenario_projection - Project a trend forward with uncertainty
+6. marine_condition_briefing - Get ocean conditions for a route/region (waves, wind, currents, warnings)
+7. route_analysis - Analyze a vessel route for safety and conditions
+8. hazard_assessment - Check for hazards (cyclones, warnings, geofences) in an area
+9. dataset_explanation - Explain dataset coverage, variables, quality
+10. export_results - Export query results as CSV
 
 REGION TYPES:
 - bbox: min_lat, max_lat, min_lon, max_lon
@@ -112,23 +107,23 @@ Output a JSON object with the QueryPlanResponse schema."""
             context.user_query,
             context.detected_language,
         )
-        
+
         # Store structured query in context
         context.structured_query = plan_result.query.model_dump() if plan_result.query else {}
         context.detected_language = plan_result.language.value if plan_result.language else "en-IN"
-        
+
         # If clarification needed, store it
         if plan_result.status == "needs_clarification":
             context.add_warning(f"Clarification needed: {plan_result.clarification_question}")
-        
+
         return []
-    
+
     def get_required_inputs(self) -> List[str]:
         return []
-    
+
     def get_output_types(self) -> List[SourceType]:
         return []
-    
+
     async def _plan_query(
         self,
         message: str,
@@ -138,18 +133,14 @@ Output a JSON object with the QueryPlanResponse schema."""
         # Detect language if not provided
         if language is None:
             language = self._detect_language(message)
-        
-        # Demo mode: return deterministic responses without LLM
-        if self.demo_mode:
-            return self._demo_plan_query(message, language)
-        
+
         # Build user prompt
         user_prompt = f"""User message: "{message}"
 Detected language: {language}
 Current date: {datetime.now().strftime('%Y-%m-%d')}
 
 Convert this to a structured query. If mandatory parameters are missing (especially for marine_condition_briefing or route_analysis), return needs_clarification with a specific question."""
-        
+
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -160,21 +151,14 @@ Convert this to a structured query. If mandatory parameters are missing (especia
                 response_format={"type": "json_object"},
                 temperature=settings.llm_temperature,
             )
-            
+
             result = json.loads(response.choices[0].message.content)
             return QueryPlanResponse(**result)
-            
+
         except Exception as e:
             logger.error(f"Query planning failed: {e}")
-            return QueryPlanResponse(
-                status="unsupported",
-                intent=Intent.PROFILE_SEARCH,
-                language=SupportedLanguage(language) if language in [l.value for l in SupportedLanguage] else SupportedLanguage.EN_IN,
-                query=StructuredQuery(intent=Intent.PROFILE_SEARCH, language=SupportedLanguage.EN_IN),
-                clarification_question=None,
-                warnings=[f"Planning error: {str(e)}"],
-            )
-    
+            raise
+
     def _detect_language(self, text: str) -> str:
         """Detect language from text."""
         # Check for Malayalam script
@@ -209,81 +193,8 @@ Convert this to a structured query. If mandatory parameters are missing (especia
             return "ur-IN"
         return "en-IN"
 
-    def _demo_plan_query(self, message: str, language: str) -> QueryPlanResponse:
-        """Deterministic demo query planning without LLM."""
-        message_lower = message.lower()
-        
-        # Determine intent based on keywords
-        # Check anomaly-related keywords first (before route keywords)
-        if any(kw in message_lower for kw in ["anomal", "unusual", "abnormal"]):
-            intent = Intent.ANOMALY_DETECTION
-        elif any(kw in message_lower for kw in ["alert", "warning", "cyclone"]):
-            intent = Intent.HAZARD_ASSESSMENT
-        elif any(kw in message_lower for kw in ["what if", "scenario", "departure", "speed"]):
-            intent = Intent.SCENARIO_PROJECTION
-        elif any(kw in message_lower for kw in ["compare", "baseline", "historical"]):
-            intent = Intent.ANOMALY_DETECTION
-        elif any(kw in message_lower for kw in ["route", "travel", "safe", "mumbai", "goa"]):
-            intent = Intent.ROUTE_ANALYSIS
-        elif any(kw in message_lower for kw in ["temperature", "salinity", "conditions", "show"]):
-            intent = Intent.PROFILE_SEARCH
-        elif any(kw in message_lower for kw in ["evidence", "proof", "source"]):
-            intent = Intent.PROFILE_SEARCH  # fallback
-        else:
-            intent = Intent.PROFILE_SEARCH
-        
-        # Determine region
-        region = None
-        if "arabian" in message_lower:
-            from app.schemas.query import NamedRegion
-            region = NamedRegion(type="named_region", name="arabian_sea")
-        elif "mumbai" in message_lower or "goa" in message_lower:
-            from app.schemas.query import RouteRegion, Coordinate
-            region = RouteRegion(
-                type="route",
-                origin=Coordinate(lat=19.0760, lon=72.8777),
-                destination=Coordinate(lat=15.2993, lon=74.1240),
-            )
-        elif "kerala" in message_lower:
-            from app.schemas.query import NamedRegion
-            region = NamedRegion(type="named_region", name="kerala_coast")
-        elif "bay of bengal" in message_lower or "bengal" in message_lower:
-            from app.schemas.query import NamedRegion
-            region = NamedRegion(type="named_region", name="bay_of_bengal")
-        
-        # Parse time if mentioned
-        time_range = None
-        if "tomorrow" in message_lower:
-            from app.schemas.query import TimeRange
-            from datetime import datetime, timedelta
-            tomorrow = datetime.now() + timedelta(days=1)
-            time_range = TimeRange(start=tomorrow.strftime("%Y-%m-%d"), end=tomorrow.strftime("%Y-%m-%d"))
-        
-        # Build structured query
-        structured_query = StructuredQuery(
-            intent=intent,
-            language=SupportedLanguage(language) if language in [l.value for l in SupportedLanguage] else SupportedLanguage.EN_IN,
-            region=region,
-            time_range=time_range,
-            variables=["temperature", "salinity"] if "temperature" in message_lower or "salinity" in message_lower else None,
-        )
-        
-        # Determine if clarification needed
-        clarification = None
-        if intent == Intent.ROUTE_ANALYSIS and not message_lower.__contains__("to"):
-            clarification = "Please specify origin and destination for route analysis."
-        
-        return QueryPlanResponse(
-            status="ready" if not clarification else "needs_clarification",
-            intent=intent,
-            language=SupportedLanguage(language) if language in [l.value for l in SupportedLanguage] else SupportedLanguage.EN_IN,
-            query=structured_query,
-            clarification_question=clarification,
-            warnings=[],
-        )
+    # --- Tool implementations ---
 
-# --- Tool implementations ---
-    
     async def _extract_intent(
         self,
         context: ExecutionContext,
@@ -292,7 +203,7 @@ Convert this to a structured query. If mandatory parameters are missing (especia
         """Extract intent from user query."""
         # This is handled in _plan_query
         return []
-    
+
     async def _extract_entities(
         self,
         context: ExecutionContext,
@@ -300,7 +211,7 @@ Convert this to a structured query. If mandatory parameters are missing (especia
     ) -> List[Any]:
         """Extract entities (coordinates, regions, dates, variables) from query."""
         return []
-    
+
     async def _parse_time(
         self,
         context: ExecutionContext,
@@ -308,7 +219,7 @@ Convert this to a structured query. If mandatory parameters are missing (especia
     ) -> List[Any]:
         """Parse relative time expressions."""
         return []
-    
+
     async def _parse_coordinates(
         self,
         context: ExecutionContext,
@@ -316,9 +227,9 @@ Convert this to a structured query. If mandatory parameters are missing (especia
     ) -> List[Any]:
         """Parse coordinate expressions."""
         return []
-    
+
     # --- Deterministic parsing helpers ---
-    
+
     NAMED_REGIONS = {
         "arabian_sea": {"min_lat": 8.0, "max_lat": 25.0, "min_lon": 60.0, "max_lon": 78.0},
         "bay_of_bengal": {"min_lat": 5.0, "max_lat": 22.0, "min_lon": 80.0, "max_lon": 100.0},
@@ -326,12 +237,12 @@ Convert this to a structured query. If mandatory parameters are missing (especia
         "indian_ocean": {"min_lat": -30.0, "max_lat": 30.0, "min_lon": 30.0, "max_lon": 120.0},
         "equatorial_indian_ocean": {"min_lat": -10.0, "max_lat": 10.0, "min_lon": 40.0, "max_lon": 110.0},
     }
-    
+
     def _parse_relative_time(self, text: str) -> Optional[TimeRange]:
         """Parse relative time expressions."""
         text_lower = text.lower()
         today = datetime.now()
-        
+
         if "tomorrow" in text_lower:
             tomorrow = today + timedelta(days=1)
             return TimeRange(start=tomorrow.strftime("%Y-%m-%d"), end=tomorrow.strftime("%Y-%m-%d"))
@@ -354,28 +265,28 @@ Convert this to a structured query. If mandatory parameters are missing (especia
             start = today - timedelta(days=today.weekday())
             end = start + timedelta(days=6)
             return TimeRange(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
-        
+
         # Check for month year patterns
         month_pattern = r'(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})'
         match = re.search(month_pattern, text_lower)
         if match:
             month_name = match.group(1)
             year = int(match.group(2))
-            month_num = ["january", "february", "march", "april", "may", "june", 
-                        "july", "august", "september", "october", "november", "december"].index(month_name) + 1
+            month_num = ["january", "february", "march", "april", "may", "june",
+                         "july", "august", "september", "october", "november", "december"].index(month_name) + 1
             start = datetime(year, month_num, 1)
             if month_num == 12:
                 end = datetime(year + 1, 1, 1) - timedelta(days=1)
             else:
                 end = datetime(year, month_num + 1, 1) - timedelta(days=1)
             return TimeRange(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
-        
+
         return None
-    
+
     def _resolve_named_region(self, name: str) -> Optional[BBoxRegion]:
         """Resolve named region to bounding box."""
         return self.NAMED_REGIONS.get(name.lower())
-    
+
     def _parse_coordinates_from_text(self, text: str) -> Optional[Tuple[float, float]]:
         """Parse lat/lon from text like '19.0760, 72.8777' or '19.0760°N, 72.8777°E'."""
         # Pattern for decimal degrees

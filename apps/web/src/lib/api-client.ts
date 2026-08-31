@@ -1,5 +1,7 @@
 // API Client for FloatChat Frontend
 
+import type { OrchestrateRequest, OrchestrateResponse, StreamEvent } from '@floatchat/shared-types';
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -114,6 +116,34 @@ export const api = {
   // Query Run Details
   getQueryRun: (queryRunId: string) =>
     request<any>(`/api/v1/query-runs/${queryRunId}`),
+
+  // Phase 6 - one verified execution, everything derived from it
+  orchestrate: (payload: OrchestrateRequest) =>
+    request<OrchestrateResponse>('/api/v1/orchestrate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Phase 6 - WebSocket execution stream (same run surface, live events)
+  orchestrateStream(
+    payload: OrchestrateRequest,
+    onEvent: (event: StreamEvent) => void,
+  ): () => void {
+    const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const base = API_BASE.replace(/^https?:\/\//, '');
+    const socket = new WebSocket(`${protocol}${base}/api/v1/orchestrate/stream`);
+    socket.onmessage = (message) => {
+      try {
+        onEvent(JSON.parse(message.data) as StreamEvent);
+      } catch {
+        // ignore malformed frames; the run still completes server-side
+      }
+    };
+    socket.onopen = () => {
+      socket.send(JSON.stringify(payload));
+    };
+    return () => socket.close();
+  },
 };
 
 // Helper to download blob as file

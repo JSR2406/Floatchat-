@@ -34,13 +34,13 @@ async def chat_endpoint(
     """Main chat endpoint: NL question → structured query → execution → verified response."""
     query_run_id = str(uuid.uuid4())
     session_id = request.session_id or str(uuid.uuid4())
-    
+
     logger.info(f"Chat request: {request.message[:100]}... (session: {session_id})")
 
     # 1. Plan structured query
     planner = get_query_planner()
     plan_result = await planner.plan_query(request.message, request.language)
-    
+
     if plan_result.status == "needs_clarification":
         # Save query run with clarification status
         query_run = QueryRun(
@@ -54,7 +54,7 @@ async def chat_endpoint(
         )
         session.add(query_run)
         await session.commit()
-        
+
         return ChatResponse(
             query_run_id=query_run_id,
             answer="",
@@ -64,7 +64,7 @@ async def chat_endpoint(
             clarification_question=plan_result.clarification_question,
             partial_query=plan_result.query,
         )
-    
+
     if plan_result.status == "unsupported":
         raise HTTPException(status_code=400, detail="Query type not supported")
 
@@ -113,7 +113,7 @@ async def chat_endpoint(
         execution_status="success",
     )
     session.add(query_run)
-    
+
     evidence_record = EvidenceRecord(
         query_run_id=query_run_id,
         float_ids=evidence.float_ids,
@@ -151,55 +151,55 @@ def build_evidence_record(query: StructuredQuery, result: dict) -> EvidenceSchem
     """Build evidence record from query and results."""
     metadata = result.get("metadata", {})
     profiles = result.get("profiles", [])
-    
+
     # Float IDs
     float_ids = metadata.get("float_ids", [])
-    
+
     # Region info
     region_info = {"type": "unknown"}
     if query.region:
         region_info = query.region.model_dump()
-    
+
     # Time range
     time_range = {"start": "", "end": ""}
     if metadata.get("time_range"):
         time_range = metadata["time_range"]
     elif query.time_range:
         time_range = query.time_range.model_dump()
-    
+
     # Depth range
     depth_range = None
     if metadata.get("depth_range_m"):
         depth_range = metadata["depth_range_m"]
     elif query.depth_range_m:
         depth_range = query.depth_range_m.model_dump()
-    
-    # Data freshness (demo mode uses synthetic data)
+
+    # Data freshness
     data_freshness = {
         "latest_profile": time_range.get("end", datetime.utcnow().isoformat()),
-        "days_old": 30,  # Demo data is "30 days old"
-        "source": "demo",
+        "days_old": None,
+        "source": "argo_gdac",
     }
-    
+
     # Quality filters
     quality_filters = {
         "filters": [query.quality_filter.value],
         "description": f"QC filter: {query.quality_filter.value} (flags 1=good, 2=probably good)",
     }
-    
+
     # Source identifiers
     source_identifiers = {
-        "dataset": "argo_indian_ocean_demo",
-        "snapshot": "2026-01-01",
+        "dataset": "argo_gdac",
+        "snapshot": datetime.utcnow().strftime("%Y-%m-%d"),
         "doi": "10.17882/42182",
         "source_urls": ["https://data-argo.ifremer.fr/argo"],
     }
-    
+
     # Query steps
     query_steps = [
         {"step": 1, "tool": "search_profiles", "params": query.model_dump(), "result_count": metadata.get("profile_count", 0)},
     ]
-    
+
     return EvidenceSchema(
         float_ids=float_ids,
         profile_count=metadata.get("profile_count", 0),
@@ -237,28 +237,28 @@ def generate_answer(
     """Generate human-readable answer from query results."""
     metadata = result.get("metadata", {})
     profiles = result.get("profiles", [])
-    
+
     float_count = metadata.get("float_count", 0)
     profile_count = metadata.get("profile_count", 0)
     obs_count = metadata.get("observation_count", 0)
-    
+
     if query.intent == Intent.PROFILE_SEARCH:
         var_names = ", ".join([v.value for v in (query.variables or ["temperature"])])
         region_name = "the requested region"
         if query.region and hasattr(query.region, 'name'):
             region_name = query.region.name.replace("_", " ").title()
-        
+
         time_str = ""
         if query.time_range:
             time_str = f" during {query.time_range.start[:7]}"
-        
+
         answer = (
             f"Found **{profile_count} profiles** from **{float_count} floats** "
             f"in {region_name}{time_str}. "
             f"Variables: {var_names}. "
             f"Total observations: {obs_count:,}."
         )
-        
+
         # Add temperature summary if available
         if profiles:
             temps = []
@@ -268,18 +268,18 @@ def generate_answer(
                         temps.append(obs["temperature_c"])
             if temps:
                 answer += f" Temperature range: **{min(temps):.1f}–{max(temps):.1f}°C** (mean: {sum(temps)/len(temps):.1f}°C)."
-        
+
         if not verification_result.all_verified:
             answer += " ⚠️ *Some numeric claims could not be fully verified.*"
-        
+
         return answer
-    
+
     elif query.intent == Intent.TIMESERIES_SUMMARY:
         return f"Time series analysis for {query.variables[0].value if query.variables else 'variable'} completed with {profile_count} profiles."
-    
+
     elif query.intent == Intent.DEPTH_PROFILE_SUMMARY:
         return f"Depth profile summary generated for {profile_count} profiles across {float_count} floats."
-    
+
     else:
         return f"Query executed successfully. Found {profile_count} profiles from {float_count} floats."
 
@@ -288,10 +288,10 @@ def create_visualizations(query: StructuredQuery, result: dict, evidence: Eviden
     """Create visualization data for frontend."""
     profiles = result.get("profiles", [])
     metadata = result.get("metadata", {})
-    
+
     charts = []
     map_data = None
-    
+
     # Map data - float locations
     if profiles:
         features = []
@@ -311,22 +311,22 @@ def create_visualizations(query: StructuredQuery, result: dict, evidence: Eviden
                     "longitude": p["longitude"],
                     "temperature_c": p["observations"][0].get("temperature_c") if p.get("observations") else None,
                     "salinity_psu": p["observations"][0].get("salinity_psu") if p.get("observations") else None,
-                    "depth_m": max((o.get("depth_m", 0) for o in p.get("observations", [])), default=0),
+                    "depth_m": max([o.get("depth_m", 0) for o in p.get("observations", [])], default=0),
                 }
             })
-        
+
         # Compute center
         lats = [f["geometry"]["coordinates"][1] for f in features]
         lons = [f["geometry"]["coordinates"][0] for f in features]
         center = [sum(lons)/len(lons), sum(lats)/len(lats)]
-        
+
         map_data = {
             "type": "geojson",
             "features": features,
             "center": center,
             "zoom": 4,
         }
-    
+
     # Depth profile chart
     if query.intent in [Intent.PROFILE_SEARCH, Intent.DEPTH_PROFILE_SUMMARY]:
         # Aggregate by depth bins
@@ -340,7 +340,7 @@ def create_visualizations(query: StructuredQuery, result: dict, evidence: Eviden
                     if bin_key not in depth_bins:
                         depth_bins[bin_key] = []
                     depth_bins[bin_key].append(temp)
-        
+
         chart_data = []
         for depth in sorted(depth_bins.keys()):
             temps = depth_bins[depth]
@@ -349,7 +349,7 @@ def create_visualizations(query: StructuredQuery, result: dict, evidence: Eviden
                 "y": depth + 5,  # bin center
                 "sample_count": len(temps),
             })
-        
+
         if chart_data:
             charts.append({
                 "type": "depth_profile",
@@ -365,10 +365,10 @@ def create_visualizations(query: StructuredQuery, result: dict, evidence: Eviden
                     "time_range": f"{metadata.get('time_range', {}).get('start', '')} to {metadata.get('time_range', {}).get('end', '')}",
                     "sample_count": sum(d["sample_count"] for d in chart_data),
                     "float_count": metadata.get("float_count", 0),
-                    "data_source": "ARGO demo",
+                    "data_source": "ARGO",
                 }
             })
-    
+
     # Time series chart
     if query.intent == Intent.TIMESERIES_SUMMARY and "data" in result:
         ts_data = result["data"]
@@ -394,12 +394,12 @@ def create_visualizations(query: StructuredQuery, result: dict, evidence: Eviden
                     "region": str(query.region),
                     "sample_count": len(chart_data),
                     "float_count": metadata.get("float_count", 0),
-                    "data_source": "ARGO demo",
+                    "data_source": "ARGO",
                 }
             })
-    
+
     visualizations = {"charts": charts}
     if map_data:
         visualizations["map"] = map_data
-    
+
     return visualizations

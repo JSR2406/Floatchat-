@@ -20,15 +20,14 @@ async def health_check(session: AsyncSession = Depends(get_db_session)):
     db_status = "disconnected"
     try:
         await session.execute(text("SELECT 1"))
-        db_status = "connected" if not settings.demo_mode else "demo"
+        db_status = "connected"
     except Exception as e:
         logger.warning(f"Database health check failed: {e}")
         db_status = "disconnected"
-    
+
     return HealthResponse(
         status="healthy" if db_status != "disconnected" else "degraded",
         version="0.1.0",
-        demo_mode=settings.demo_mode,
         database=db_status,
         timestamp=__import__("datetime").datetime.utcnow().isoformat() + "Z",
     )

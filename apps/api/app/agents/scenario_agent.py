@@ -26,6 +26,7 @@ class ScenarioAgent(BaseAgent):
         super().__init__("scenario_agent")
         self.risk_engine = get_risk_engine()
         self.provenance = get_provenance_service()
+        self._live_env: Optional[EnvironmentalConditions] = None
     
     def get_required_inputs(self) -> List[str]:
         return []
@@ -62,7 +63,13 @@ class ScenarioAgent(BaseAgent):
             base_request_obj = RouteAnalysisRequest(**base_request)
         except Exception as e:
             return [self._create_error_response(f"Invalid base request: {str(e)}")]
-        
+
+        # Resolve live marine conditions once (falls back to baseline when the
+        # source is not configured; nothing is ever fabricated).
+        self._live_env = await self._resolve_live_conditions(
+            base_request_obj.origin_lat, base_request_obj.origin_lon
+        )
+
         # Execute the appropriate scenario
         if scenario_type == "departure_time_change":
             result = self._analyze_departure_time_change(base_request_obj, sq)
@@ -102,7 +109,7 @@ class ScenarioAgent(BaseAgent):
         
         # Run risk assessment with adjusted conditions
         risk = self.risk_engine.assess_risk(
-            environmental_conditions=self._get_seasonal_conditions(season),
+            environmental_conditions=self._live_env or self._get_seasonal_conditions(season),
             route_context={"query_run_id": sq.get("query_run_id", "")},
         )
         
@@ -110,7 +117,9 @@ class ScenarioAgent(BaseAgent):
             "scenario_type": "departure_time_change",
             "new_departure_time": new_time_str or "unspecified",
             "risk_assessment": risk,
-            "difference_note": f"Conditions adjusted for {season} season",
+            "difference_note": (
+                "Conditions from live marine observations"
+                if self._live_env else f"Conditions adjusted for {season} season (baseline)")
         }
     
     def _analyze_route_variant(
@@ -149,12 +158,12 @@ class ScenarioAgent(BaseAgent):
         
         # Assess risk for both variants
         risk_a = self.risk_engine.assess_risk(
-            environmental_conditions=self._get_default_conditions(),
+            environmental_conditions=self._live_env or self._get_default_conditions(),
             route_context={"query_run_id": ""},
         )
         
         risk_b = self.risk_engine.assess_risk(
-            environmental_conditions=self._get_default_conditions(),
+            environmental_conditions=self._live_env or self._get_default_conditions(),
             route_context={"query_run_id": ""},
         )
         
@@ -175,7 +184,7 @@ class ScenarioAgent(BaseAgent):
         weather_params = sq.get("weather_params", {})
         
         # Create adjusted environmental conditions
-        base_conditions = self._get_default_conditions()
+        base_conditions = self._live_env or self._get_default_conditions()
         
         # Apply variations
         if "wave_height" in weather_params:
@@ -222,7 +231,7 @@ class ScenarioAgent(BaseAgent):
         
         # Risk changes with speed - faster = less time in hazardous conditions
         base_risk = self.risk_engine.assess_risk(
-            environmental_conditions=self._get_default_conditions(),
+            environmental_conditions=self._live_env or self._get_default_conditions(),
             route_context={"query_run_id": ""},
         )
         
@@ -246,6 +255,36 @@ class ScenarioAgent(BaseAgent):
             "risk_assessment": adjusted_risk,
         }
     
+    async def _resolve_live_conditions(self, lat: float, lon: float) -> Optional[EnvironmentalConditions]:
+        """Fetch live ocean conditions for the scenario origin when configured."""
+        try:
+            from app.services.marine_capability_client import get_marine_capability_client
+            env = await get_marine_capability_client().ocean_conditions(lat, lon)
+        except Exception:
+            return None
+        if not env.get("available"):
+            return None
+        row = (env.get("data") or {}).get("row") or {}
+        if not row:
+            return None
+        wave = row.get("wave_height_m")
+        period = row.get("wave_period_s")
+        wind = row.get("wind_speed_ms")
+        current = row.get("current_speed_ms")
+        if wave is None and wind is None and current is None:
+            return None
+        return EnvironmentalConditions(
+            max_wave_height=round(float(wave or 0.0), 1),
+            avg_wave_height=round(float(wave or 0.0), 1),
+            max_wave_period=round(float(period or 0.0), 1),
+            avg_wave_period=round(float(period or 0.0), 1),
+            max_wind_speed=round(float(wind or 0.0), 1),
+            avg_wind_speed=round(float(wind or 0.0), 1),
+            current_speed=round(float(current or 0.0), 1),
+            visibility=10.0,
+            precipitation=0.0,
+        )
+
     @staticmethod
     def _get_default_conditions() -> EnvironmentalConditions:
         """Get default environmental conditions for scenario analysis."""

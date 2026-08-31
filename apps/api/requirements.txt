@@ -1,44 +1,48 @@
 # Core Framework
-fastapi==0.110.1
-uvicorn[standard]==0.29.0
-pydantic==2.7.1
+fastapi==0.141.1
+uvicorn[standard]==0.30.1
+pydantic==2.13.4
 pydantic-settings==2.3.3
 
 # Database
-sqlalchemy==2.0.30
+sqlalchemy==2.0.51
 asyncpg==0.29.0
 psycopg2-binary==2.9.9
 alembic==1.13.1
-geoalchemy2==0.14.1
-supabase==2.3.4
+geoalchemy2==0.20.0
+shapely==2.1.2
+supabase==2.5.1
 
 # ARGO Data
-argopy==0.1.8
-xarray==2024.5.0
-pandas==2.2.2
-numpy==1.26.4
-scipy==1.13.1
-pyarrow==16.1.0
-netCDF4==1.6.8
+argopy==1.4.0
+erddapy==3.2.1
+xarray==2025.9.0
+pandas==3.0.5
+numpy==2.4.6
+scipy==1.17.1
+pyarrow==25.0.1
+netCDF4==1.7.4
 
 # HTTP & Utilities
 httpx==0.27.0
-python-multipart==0.0.9
+python-multipart==0.0.32
 python-dotenv==1.0.1
 structlog==24.1.0
-tenacity==8.2.3
+tenacity==8.5.0
 
 # LLM (OpenAI-compatible)
-openai==1.30.1
+openai==1.109.1
+
+# MCP (Model Context Protocol) capability layer
+mcp>=1.2.0
 
 # Validation & Serialization
-orjson==3.9.10
+orjson==3.11.9
 
 # Testing
-pytest==8.2.1
+pytest==8.2.0
 pytest-asyncio==0.23.3
-pytest-cov==4.1.0
-httpx==0.27.0
+pytest-cov==7.1.0
 
 # Type Stubs
-types-python-dateutil==2.8.19.20240106
+types-python-dateutil==2.9.0.20260807

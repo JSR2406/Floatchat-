@@ -7,6 +7,7 @@ from datetime import datetime
 
 from app.agents import BaseAgent, ExecutionContext
 from app.schemas.provenance import SourceType
+from app.schemas.hazard import HazardType
 from app.schemas.route import (
     RouteAnalysisRequest, RouteAnalysisResponse, RouteMode, VesselType,
     EnvironmentalConditions, HazardIntersection, GeofenceIntersection,
@@ -14,22 +15,28 @@ from app.schemas.route import (
 )
 from app.services.provenance import get_provenance_service
 from app.services.data_fusion import get_fusion_engine
+from app.services.marine_capability_client import (
+    MarineCapabilityClient, get_marine_capability_client,
+)
 
 
 class RouteAgent(BaseAgent):
     """
     Generates vessel routes and performs safety analysis including:
     - Route generation (great circle or waypoint-based)
-    - Hazard intersection detection
-    - Geofence compliance checking
-    - Environmental condition assessment
-    - Risk scoring
+    - Hazard intersection detection (live marine warnings)
+    - Geofence compliance checking (live restricted areas)
+    - Environmental condition assessment (live ocean/weather observations)
+    - Risk scoring (hard constraints can never be overridden)
     """
     
-    def __init__(self):
+    def __init__(self, capability: Optional[MarineCapabilityClient] = None):
         super().__init__("route_agent")
         self.provenance = get_provenance_service()
         self.fusion = get_fusion_engine()
+        self._capability = capability or get_marine_capability_client()
+        self._live_marine = False
+        self._evidence_sources: List[str] = []
     
     def get_required_inputs(self) -> List[str]:
         return []
@@ -222,35 +229,126 @@ class RouteAgent(BaseAgent):
         return segments
     
     async def _detect_hazards(self, route, request: RouteAnalysisRequest) -> List:
-        """Detect hazards along the route."""
-        hazards = []
-        # Demo: no hazards detected
+        """Detect live marine-warning hazards intersecting the route."""
+        route_latlon = [(lat, lon) for lon, lat in route.coords]
+        mid = route.interpolate(0.5, normalized=True)
+        warnings_env = await self._capability.warnings_near_route(route_latlon)
+        hazards: List[HazardIntersection] = []
+
+        intersections = (warnings_env.get("data") or {}).get("warning_intersections") or []
+        self._evidence_sources.extend(warnings_env.get("sources") or [])
+        for warning in intersections:
+            if warning.get("status") != "active":
+                continue
+            warning_type = (warning.get("warning_type") or "").lower()
+            hazard_type = warning_type if warning_type in {
+                t.value for t in HazardType} else HazardType.WARNING.value
+            hazards.append(HazardIntersection(
+                hazard_type=hazard_type,
+                location={"lat": round(mid.y, 4), "lon": round(mid.x, 4)},
+                severity=self._severity_to_hazard(warning.get("severity")),
+                distance_from_route_km=0.0,
+                description=warning.get("description")
+                or f"{warning.get('warning_type', 'marine')} warning along route",
+            ))
         return hazards
-    
+
     async def _check_geofences(self, route, request: RouteAnalysisRequest) -> List:
-        """Check geofence compliance along the route."""
-        intersections = []
-        # Demo: no geofence intersections
+        """Check live restricted-area compliance along the route."""
+        route_latlon = [(lat, lon) for lon, lat in route.coords]
+        mid = route.interpolate(0.5, normalized=True)
+        restrictions_env = await self._capability.restrictions_near_route(route_latlon)
+
+        intersections: List[GeofenceIntersection] = []
+        if not restrictions_env.get("available"):
+            self._evidence_sources.extend(restrictions_env.get("sources") or [])
+            return intersections
+
+        self._evidence_sources.extend(restrictions_env.get("sources") or [])
+        for area in (restrictions_env.get("data") or {}).get("intersections") or []:
+            if area.get("status") != "active":
+                continue
+            intersections.append(GeofenceIntersection(
+                geofence_id=area.get("area_id"),
+                geofence_name=area.get("area_name"),
+                violation_type="pass",
+                location={"lat": round(mid.y, 4), "lon": round(mid.x, 4)},
+                severity=self._severity_to_hazard(area.get("severity")),
+                description=f"Restricted area: {area.get('restriction_type') or area.get('restriction_kind') or 'restricted'}",
+            ))
         return intersections
-    
+
+    @staticmethod
+    def _severity_to_hazard(severity: Optional[str]) -> str:
+        """Map marine severity (low/moderate/high/critical/unknown) to hazard level."""
+        if severity is None:
+            return "low"
+        severity = str(severity).lower()
+        if severity in ("high", "critical"):
+            return "high"
+        if severity == "moderate":
+            return "moderate"
+        return "low"
+
     async def _assess_environmental_conditions(self, route, request: RouteAnalysisRequest):
-        """Assess environmental conditions along the route."""
+        """Assess environmental conditions using live ocean/weather observations."""
+        from app.schemas.route import EnvironmentalConditions
+        self._live_marine = False
+        self._evidence_sources = []
+
+        sample_points = [0.0, 0.5, 1.0]
+        rows = []
+        for frac in sample_points:
+            pt = route.interpolate(frac, normalized=True)
+            env = await self._capability.ocean_conditions(pt.y, pt.x)
+            if env.get("available"):
+                rows.append((env["data"] or {}).get("row") or {})
+                self._evidence_sources.extend(env.get("sources") or [])
+        weather_rows = []
+        for frac in sample_points:
+            pt = route.interpolate(frac, normalized=True)
+            env = await self._capability.weather_at(pt.y, pt.x)
+            if env.get("available"):
+                weather_rows.append((env["data"] or {}).get("row") or {})
+                self._evidence_sources.extend(env.get("sources") or [])
+
+        if rows:
+            self._live_marine = True
+            return EnvironmentalConditions(
+                max_wave_height=round(max(r.get("wave_height_m") or 0 for r in rows), 1),
+                avg_wave_height=round(sum(r.get("wave_height_m") or 0 for r in rows) / len(rows), 1),
+                max_wave_period=round(max(r.get("wave_period_s") or 0 for r in rows), 1),
+                avg_wave_period=round(sum(r.get("wave_period_s") or 0 for r in rows) / len(rows), 1),
+                max_wind_speed=round(max(
+                    (r.get("wind_speed_ms") or 0) for r in rows +
+                    weather_rows), 1),
+                avg_wind_speed=round(sum(
+                    (r.get("wind_speed_ms") or 0) for r in rows + weather_rows
+                ) / max(len(rows) + len(weather_rows), 1), 1),
+                current_speed=round(max(r.get("current_speed_ms") or 0 for r in rows), 1),
+                visibility=round(max(
+                    (w.get("visibility_m") or 0) for w in weather_rows
+                ) / 1000.0, 1) if weather_rows else 10.0,
+                precipitation=round(max(
+                    (w.get("precipitation_mm") or 0) for w in weather_rows), 1)
+                if weather_rows else 0.0,
+            )
+
+        # Fallback: deterministic baseline when no live source is configured.
         from app.services.temporal_reasoner import get_temporal_reasoner
         temporal = get_temporal_reasoner()
         season = temporal.determine_season(datetime.utcnow().month)
-        
-        # Base conditions depend on season and region
-        return __import__('app.schemas.route', fromlist=['EnvironmentalConditions']).EnvironmentalConditions(
-            max_wave_height=round(2.0, 1),
-            avg_wave_height=round(1.0, 1),
-            max_wave_period=round(8.0, 1),
-            avg_wave_period=round(5.0, 1),
-            max_wind_speed=round(10.0, 1),
-            avg_wind_speed=round(5.0, 1),
-            current_speed=round(0.5, 1),
-            visibility=10.0,
-            precipitation=0.0,
+        base = EnvironmentalConditions(
+            max_wave_height=2.0, avg_wave_height=1.0,
+            max_wave_period=8.0, avg_wave_period=5.0,
+            max_wind_speed=10.0, avg_wind_speed=5.0,
+            current_speed=0.5, visibility=10.0, precipitation=0.0,
         )
+        if season == "monsoon":
+            base.max_wave_height = 3.0
+            base.max_wind_speed = 25.0
+            base.current_speed = 0.8
+        return base
     
     async def _calculate_risk(
         self,
@@ -259,12 +357,14 @@ class RouteAgent(BaseAgent):
         geofence_intersections: List,
         request: RouteAnalysisRequest,
     ):
-        """Calculate overall risk score for the route."""
+        """Calculate overall risk score for the route.
+
+        Hard constraints (active restricted areas, active high/critical
+        warnings) are passed to the risk engine and can never be overridden by
+        the environmental score.
+        """
         from app.services.risk_engine import get_risk_engine
-        risk_engine = get_risk_engine()
-        
-        # Convert to EnvironmentalConditions format
-        from app.schemas.route import EnvironmentalConditions
+
         env = EnvironmentalConditions(
             max_wave_height=env_conditions.max_wave_height,
             avg_wave_height=env_conditions.avg_wave_height,
@@ -276,35 +376,73 @@ class RouteAgent(BaseAgent):
             visibility=env_conditions.visibility,
             precipitation=env_conditions.precipitation,
         )
-        
-        return get_risk_engine().assess_risk(env_conditions=env)
+
+        active_restrictions = [g for g in geofence_intersections
+                               if getattr(g, "severity", None) in ("high", "moderate")]
+        high_warnings = [h for h in hazard_intersections
+                         if getattr(h, "severity", None) in ("high", "moderate")]
+        hard_constraints = {
+            "active_restrictions": len(active_restrictions),
+            "high_severity_warnings": len(high_warnings),
+            "restrictions": [
+                {"area_name": getattr(g, "geofence_name", "restricted area")}
+                for g in active_restrictions
+            ],
+            "warnings": [
+                {"warning_id": getattr(h, "hazard_type", "marine"), "severity": "high"}
+                for h in high_warnings
+            ],
+        }
+
+        return get_risk_engine().assess_risk(
+            environmental_conditions=env,
+            hard_constraints=hard_constraints,
+        )
     
     async def _gather_evidence(self, route, request: RouteAnalysisRequest) -> List[Dict[str, Any]]:
-        """Gather evidence for the route analysis."""
+        """Gather evidence for the route analysis (real data when available)."""
         evidence = []
         evidence.append({
-            "source": "demo_route_analysis",
+            "source": "route_parameters",
             "type": "route_parameters",
             "description": f"Route from ({request.origin_lat}, {request.origin_lon}) to "
                           f"({request.destination_lat}, {request.destination_lon})",
         })
+        if self._live_marine:
+            sources = ", ".join(sorted(set(self._evidence_sources))) or "live_marine"
+            evidence.append({
+                "source": sources,
+                "type": "live_marine_observations",
+                "description": "Environmental conditions and restriction checks "
+                               "derived from live marine observations.",
+            })
+        else:
+            evidence.append({
+                "source": "baseline_estimates",
+                "type": "marine_data_status",
+                "description": "No live marine data source configured; conditions "
+                               "are deterministic baseline estimates.",
+            })
         return evidence
-    
-    @staticmethod
-    def _get_limitations(request: RouteAnalysisRequest) -> List[str]:
+
+    def _get_limitations(self, request: RouteAnalysisRequest) -> List[str]:
         """Get list of limitations for the route analysis."""
         limitations = [
             "Speed assumption: 15 knots assumed for time estimates",
             "Simplified route: great circle between waypoints",
-            "Environmental data: deterministic estimates only",
         ]
+        if not self._live_marine:
+            limitations.append("Live marine data: not configured; environmental "
+                               "conditions are baseline estimates only")
         
         if not request.waypoints:
             limitations.append("No custom waypoints specified")
         
-        if request.avoid_geofences:
-            limitations.append("Geofence data: demo mode, not comprehensive")
-        
+        if self._live_marine and any(
+            s in ("incois", "imd", "mosdac") for s in self._evidence_sources
+        ):
+            limitations.append("Live marine sources may have partial coverage")
+
         return limitations
     
     @staticmethod

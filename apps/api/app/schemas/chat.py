@@ -207,7 +207,6 @@ class CSVExportRequest(BaseModel):
 
 class DatasetStatusResponse(BaseModel):
     datasets: List[Dict[str, Any]]
-    demo_mode: bool
 
 
 class QueryRunDetailResponse(BaseModel):
@@ -228,6 +227,5 @@ class QueryRunDetailResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["healthy", "degraded", "unhealthy"]
     version: str
-    demo_mode: bool
-    database: Literal["connected", "disconnected", "demo"]
+    database: Literal["connected", "disconnected"]
     timestamp: str

@@ -1,219 +1,362 @@
-'use client';
+"use client";
 
-import { useRef, useEffect } from 'react';
-import { Loader2, Copy, Check, Volume2, VolumeX, ChevronDown, ChevronUp, FileText, MapPin, BarChart3, AlertCircle, Info } from 'lucide-react';
-import { cn, formatDateTime, getConfidenceColor } from '@/lib/utils';
-import type { ChatMessage, ChatResponse, EvidenceRecord } from '@floatchat/shared-types';
+import { useState, useRef, useEffect } from "react";
+import { Mic, Send, MicOff, Volume2, VolumeX, Globe, FileText, AlertTriangle } from "lucide-react";
 
-interface ChatInterfaceProps {
-  messages: ChatMessage[];
-  isLoading: boolean;
-  onSendMessage: (content: string) => void;
-  inputValue: string;
-  setInputValue: (value: string) => void;
-  lastResponse: ChatResponse | null;
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+  language?: string;
+  evidence?: any[];
+  visualizations?: any;
+  riskAssessment?: any;
+  status?: string;
+  limitations?: string[];
+  sources?: string[];
 }
 
-export function ChatInterface({ messages, isLoading, onSendMessage, inputValue, setInputValue, lastResponse }: ChatInterfaceProps) {
+interface ChatMessage {
+  id: string;
+  content: string;
+  isUser: boolean;
+  timestamp: Date;
+  structuredQuery?: any;
+  visualizations?: any;
+  evidence?: any;
+  audioUrl?: string | null;
+  status?: string;
+  clarificationQuestion?: string;
+  isError?: boolean;
+}
+
+interface ChatInterfaceProps {
+  messages?: ChatMessage[];
+  isLoading?: boolean;
+  onSendMessage?: (content: string) => Promise<void> | void;
+  inputValue?: string;
+  setInputValue?: (value: string) => void;
+  lastResponse?: any;
+  onVoiceStart?: () => void;
+  onVoiceStop?: () => void;
+}
+
+export function ChatInterface({
+  onVoiceStart,
+  onVoiceStop,
+  messages: externalMessages,
+  isLoading: externalIsLoading,
+  onSendMessage,
+  inputValue: externalInput,
+  setInputValue: externalSetInput,
+}: ChatInterfaceProps) {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      content: "Welcome to ORCA! I'm your marine intelligence assistant. Ask me about ocean conditions, route safety, hazards, or scenario projections. I support 10 Indian coastal languages.",
+      timestamp: new Date(),
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState("en-IN");
+  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [audioPlaying, setAudioPlaying] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const conversationIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const controlled = typeof externalMessages !== "undefined";
+  const displayMessages: Message[] = controlled
+    ? (externalMessages ?? []).map((m) => ({
+        id: m.id,
+        role: m.isUser ? "user" : "assistant",
+        content: m.content,
+        timestamp: m.timestamp,
+        status: m.status,
+        evidence: m.evidence ? [m.evidence] : [],
+      }))
+    : messages;
+  const displayInput = controlled ? externalInput ?? "" : input;
+  const displayLoading = controlled ? externalIsLoading ?? false : isLoading;
 
-  const handleCopy = (content: string, id: string) => {
-    navigator.clipboard.writeText(content);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleAudioToggle = (url: string | null | undefined) => {
-    if (!url) return;
-    if (audioPlaying === url) {
-      setAudioPlaying(null);
+  const setDisplayInput = (value: string) => {
+    if (controlled) {
+      externalSetInput?.(value);
     } else {
-      setAudioPlaying(url);
+      setInput(value);
     }
   };
+  
+  const languages = [
+    { code: "en-IN", name: "English", flag: "🇮🇳" },
+    { code: "hi-IN", name: "हिंदी", flag: "🇮🇳" },
+    { code: "ml-IN", name: "മലയാളം", flag: "🇮🇳" },
+    { code: "ta-IN", name: "தமிழ்", flag: "🇮🇳" },
+    { code: "te-IN", name: "తెలుగు", flag: "🇮🇳" },
+    { code: "bn-IN", name: "বাংলা", flag: "🇮🇳" },
+    { code: "gu-IN", name: "ગુજરાતી", flag: "🇮🇳" },
+    { code: "mr-IN", name: "मराठी", flag: "🇮🇳" },
+    { code: "or-IN", name: "ଓଡ଼ିଆ", flag: "🇮🇳" },
+    { code: "kn-IN", name: "ಕನ್ನಡ", flag: "🇮🇳" },
+  ];
+  
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+  
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, externalMessages]);
 
-  const renderMessageContent = (message: ChatMessage) => {
-    if (message.isError) {
-      return (
-        <div className="rounded-lg bg-rose-50 border border-rose-200 p-4 text-rose-800">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="h-5 w-5 flex-shrink-0" />
-            <div className="whitespace-pre-wrap">{message.content}</div>
-          </div>
-        </div>
-      );
+  const handleSubmitInner = async (raw: string) => {
+    const userInput = raw.trim();
+    if (!userInput || displayLoading) return;
+
+    if (controlled) {
+      await onSendMessage?.(userInput);
+      return;
     }
 
-    return (
-      <div className="whitespace-pre-wrap">{message.content}</div>
-    );
+    const userMessage: Message = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: userInput,
+      timestamp: new Date(),
+      language: selectedLanguage,
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    const conversationId = conversationIdRef.current ?? undefined;
+    const response = await requestOrchestrate(userInput, selectedLanguage, conversationId);
+    if (response?.conversation_id) {
+      conversationIdRef.current = response.conversation_id;
+    }
+
+    const assistantMessage: Message = {
+      id: `msg-${Date.now() + 1}`,
+      role: "assistant",
+      content: response?.answer ?? "I could not reach the marine intelligence service. No safety conclusion is offered.",
+      timestamp: new Date(),
+      language: response?.language ?? selectedLanguage,
+      riskAssessment: response?.risk
+        ? {
+            level: response.risk.level,
+            score: response.confidence?.score ?? 0,
+            reasoning: (response.limitations ?? []).join(". "),
+          }
+        : undefined,
+      status: response?.status,
+      limitations: response?.limitations,
+      sources: (response as any)?.provenance?.sources
+        ? Array.isArray((response as any).provenance.sources)
+          ? (response as any).provenance.sources.map((s: unknown) => String(s))
+          : undefined
+        : undefined,
+    };
+    setMessages(prev => [...prev, assistantMessage]);
+    setIsLoading(false);
   };
 
-  const renderMessageActions = (message: ChatMessage) => {
-    if (message.isUser) return null;
-
-    return (
-      <div className="flex items-center gap-1 ml-auto">
-        <button
-          onClick={() => handleCopy(message.content, message.id)}
-          className="p-1.5 rounded hover:bg-muted transition-colors"
-          aria-label="Copy message"
-        >
-          {copiedId === message.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-        </button>
-        {message.audioUrl && (
-          <button
-            onClick={() => handleAudioToggle(message.audioUrl)}
-            className="p-1.5 rounded hover:bg-muted transition-colors"
-            aria-label={audioPlaying === message.audioUrl ? 'Stop audio' : 'Play audio'}
-          >
-            {audioPlaying === message.audioUrl ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-          </button>
-        )}
-      </div>
-    );
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSubmitInner(displayInput);
   };
 
-  const renderStructuredQuery = (query: ChatResponse['structured_query']) => {
-    return (
-      <details className="mt-3 border border-border rounded-lg bg-muted/50">
-        <summary className="p-3 cursor-pointer flex items-center gap-2 font-medium text-sm">
-          <FileText className="h-4 w-4" />
-          Structured Query
-        </summary>
-        <pre className="p-3 text-xs font-mono overflow-x-auto max-h-64">
-          {JSON.stringify(query, null, 2)}
-        </pre>
-      </details>
-    );
+  async function requestOrchestrate(message: string, language: string, conversationId?: string) {
+    try {
+      const { api } = await import("../../lib/api-client");
+      return await api.orchestrate({ message, language: language as any, conversation_id: conversationId });
+    } catch {
+      return null;
+    }
+  }
+  
+  const handleVoiceToggle = () => {
+    if (isRecording) {
+      setIsRecording(false);
+      onVoiceStop?.();
+    } else {
+      setIsRecording(true);
+      onVoiceStart?.();
+    }
   };
-
-  const renderClarification = (question: string, partialQuery: ChatResponse['partial_query']) => {
-    return (
-      <div className="mt-3 p-4 rounded-lg border border-amber-200 bg-amber-50">
-        <div className="flex items-start gap-2">
-          <Info className="h-5 w-5 flex-shrink-0 text-amber-600" />
-          <div>
-            <p className="font-medium text-amber-800">Clarification Needed</p>
-            <p className="text-amber-700 mt-1">{question}</p>
-            {partialQuery && (
-              <details className="mt-2">
-                <summary className="text-sm text-amber-600 cursor-pointer">Partial Query</summary>
-                <pre className="mt-1 p-2 text-xs font-mono bg-amber-100 rounded overflow-x-auto">
-                  {JSON.stringify(partialQuery, null, 2)}
-                </pre>
-              </details>
-            )}
-          </div>
-        </div>
-      </div>
-    );
+  
+  const handleLanguageChange = (lang: string) => {
+    setSelectedLanguage(lang);
   };
-
-  const renderEvidenceSummary = (evidence: EvidenceRecord) => {
-    return (
-      <details className="mt-3 border border-border rounded-lg bg-card">
-        <summary className="p-3 cursor-pointer flex items-center gap-2 font-medium text-sm">
-          <BarChart3 className="h-4 w-4" />
-          Evidence Summary
-          <span className={cn('ml-auto px-2 py-0.5 rounded text-xs font-medium border', getConfidenceColor(evidence.confidence.label))}>
-            {evidence.confidence.label.toUpperCase()}
-          </span>
-        </summary>
-        <div className="px-3 pb-3 space-y-2 text-sm">
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div><span className="text-muted-foreground">Floats:</span> <span className="font-mono ml-1">{evidence.float_ids.length}</span></div>
-            <div><span className="text-muted-foreground">Profiles:</span> <span className="font-mono ml-1">{evidence.profile_count}</span></div>
-            <div><span className="text-muted-foreground">Observations:</span> <span className="font-mono ml-1">{evidence.observation_count}</span></div>
-            <div><span className="text-muted-foreground">Data Freshness:</span> <span className="font-mono ml-1">{evidence.data_freshness.days_old} days</span></div>
-          </div>
-          <div className="pt-2 border-t">
-            <p className="text-xs text-muted-foreground">{evidence.confidence.explanation}</p>
-          </div>
-        </div>
-      </details>
-    );
-  };
-
+  
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex flex-col h-full bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg flex items-center justify-center text-white font-bold">
+              ORCA
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-gray-900">Marine Intelligence Chat</h1>
+              <p className="text-xs text-gray-500">Powered by ARGO • 10 Indian Languages • Voice Enabled</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedLanguage}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {languages.map(lang => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.flag} {lang.name}
+                </option>
+              ))}
+            </select>
+            
+            <button
+              onClick={() => setIsMuted(!isMuted)}
+              className={`p-2 rounded-lg transition-colors ${isMuted ? "bg-red-100 text-red-600" : "hover:bg-gray-100"}`}
+              title={isMuted ? "Unmute TTS" : "Mute TTS"}
+            >
+              {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+            </button>
+            
+            <button
+              onClick={handleVoiceToggle}
+              disabled={displayLoading}
+              className={`p-2 rounded-lg transition-colors ${isRecording ? "bg-red-600 text-white animate-pulse" : "bg-blue-600 text-white hover:bg-blue-700"}`}
+              title={isRecording ? "Stop Recording" : "Start Voice Input"}
+            >
+              {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
+      </header>
+      
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-            <div className="h-16 w-16 rounded-full bg-ocean-100 flex items-center justify-center mb-4">
-              <Waves className="h-8 w-8 text-ocean-600" />
+      <main className="flex-1 overflow-y-auto p-4 max-w-4xl mx-auto w-full">
+        <div className="space-y-4" ref={messagesEndRef}>
+          {displayMessages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
+          ))}
+
+          {displayLoading && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] bg-gray-100 rounded-2xl p-4 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              </div>
             </div>
-            <h3 className="text-lg font-medium text-foreground mb-2">Welcome to FloatChat</h3>
-            <p className="max-w-sm">Ask questions about ARGO ocean data in any language. Get charts, maps, and full evidence for every answer.</p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
-              <span className="px-2 py-1 rounded bg-ocean-100 text-ocean-700">Temperature profiles</span>
-              <span className="px-2 py-1 rounded bg-ocean-100 text-ocean-700">Salinity trends</span>
-              <span className="px-2 py-1 rounded bg-ocean-100 text-ocean-700">Marine conditions</span>
-              <span className="px-2 py-1 rounded bg-ocean-100 text-ocean-700">Anomaly detection</span>
-              <span className="px-2 py-1 rounded bg-ocean-100 text-ocean-700">What-if scenarios</span>
+          )}
+          
+          <div ref={messagesEndRef} />
+        </div>
+      </main>
+      
+      {/* Input */}
+      <footer className="bg-white border-t border-gray-200 p-4">
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
+          <div className="flex gap-2">
+            <textarea
+              ref={inputRef}
+              value={displayInput}
+              onChange={(e) => setDisplayInput(e.target.value)}
+              placeholder="Ask about ocean conditions, route safety, hazards, scenarios..."
+              rows={1}
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
+              disabled={displayLoading}
+            />
+            <button
+              type="submit"
+              disabled={!displayInput.trim() || displayLoading}
+              className={`px-6 py-3 rounded-xl font-medium transition-colors ${!displayInput.trim() || displayLoading ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-blue-600 text-white hover:bg-blue-700"}`}
+            >
+              Send
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 text-center mt-2">
+            Supports: English, Hindi, Malayalam, Tamil, Telugu, Bengali, Gujarati, Marathi, Odia, Kannada
+          </p>
+        </form>
+      </footer>
+    </div>
+  );
+}
+
+function MessageBubble({ message }: { message: Message }) {
+  const isUser = message.role === "user";
+  const langLabel = message.language ? message.language.replace("-IN", "").toUpperCase() : "";
+  
+  return (
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+      <div className={`max-w-[80%] ${isUser ? "bg-blue-600 text-white" : "bg-white text-gray-900 border border-gray-200"}`}>
+        {!isUser && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50">
+            <span className="w-6 h-6 bg-gradient-to-br from-blue-600 to-blue-800 rounded-full flex items-center justify-center text-white text-xs font-bold">
+              ORCA
+            </span>
+            {message.language && (
+              <span className="ml-2 text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                {message.language.replace("-IN", "").toUpperCase()}
+              </span>
+            )}
+          </div>
+        )}
+        <div className={`p-4 ${isUser ? "" : "text-gray-900"}`}>
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        </div>
+        {!isUser && message.evidence && message.evidence.length > 0 && (
+          <div className="px-4 pb-4 pt-2 border-t border-gray-100">
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span className="px-2 py-0.5 bg-gray-100 rounded">📊 Evidence</span>
+              {message.evidence.map((e: any, i: number) => (
+                <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">
+                  {e.source}: {e.profiles} profiles
+                </span>
+              ))}
             </div>
           </div>
         )}
-
-        {messages.map((message) => (
-          <div key={message.id} className={cn('flex gap-3', message.isUser ? 'justify-end' : 'justify-start')}>
-            {!message.isUser && (
-              <div className="h-8 w-8 rounded-full bg-ocean-100 flex items-center justify-center flex-shrink-0">
-                <Waves className="h-4 w-4 text-ocean-600" />
-              </div>
-            )}
-            <div className={cn('flex flex-col gap-1 max-w-[85%]', message.isUser ? 'items-end' : 'items-start')}>
-              <div className={cn(
-                'rounded-2xl px-4 py-3 shadow-sm',
-                message.isUser
-                  ? 'bg-primary text-primary-foreground rounded-br-md'
-                  : 'bg-card border border-border rounded-bl-md'
-              )}>
-                {renderMessageContent(message)}
-                {renderMessageActions(message)}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{formatDateTime(message.timestamp)}</span>
-                {message.status === 'needs_clarification' && (
-                  <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-700">Clarification</span>
-                )}
-              </div>
-              {!message.isUser && message.structuredQuery && renderStructuredQuery(message.structuredQuery)}
-              {!message.isUser && message.clarificationQuestion && renderClarification(message.clarificationQuestion, message.partialQuery)}
-              {!message.isUser && message.evidence && renderEvidenceSummary(message.evidence)}
-            </div>
-            {message.isUser && (
-              <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground">
-                <span className="text-xs font-medium">You</span>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {isLoading && (
-          <div className="flex justify-start gap-3">
-            <div className="h-8 w-8 rounded-full bg-ocean-100 flex items-center justify-center flex-shrink-0">
-              <Loader2 className="h-4 w-4 text-ocean-600 animate-spin" />
-            </div>
-            <div className="rounded-2xl px-4 py-3 shadow-sm bg-card border border-border rounded-bl-md flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-muted-foreground">Analyzing your query...</span>
+        {!isUser && message.riskAssessment && (
+          <div className="px-4 pb-4 pt-2 border-t border-gray-100">
+            <div className="flex items-center gap-2 text-xs">
+              <span className={`px-2 py-0.5 rounded ${
+                message.riskAssessment.level === "low" ? "bg-green-100 text-green-700" :
+                message.riskAssessment.level === "moderate" ? "bg-yellow-100 text-yellow-700" :
+                "bg-red-100 text-red-700"
+              }`}>
+                ⚠️ Risk: {message.riskAssessment.level.toUpperCase()}
+              </span>
+              <span className="text-gray-500">Score: {(message.riskAssessment.score * 100).toFixed(0)}%</span>
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
+        {!isUser && message.limitations && message.limitations.length > 0 && (
+          <div className="px-4 pb-4 pt-2 border-t border-gray-100">
+            <div className="flex items-start gap-2 text-xs text-gray-500">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <div>
+                {message.limitations.slice(0, 3).map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="px-4 pb-3 text-right">
+          <span className={`text-xs ${isUser ? "text-blue-200" : "text-gray-400"}`}>
+            {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        </div>
       </div>
     </div>
   );
 }
 
-import { useState } from 'react';
-import { Waves } from 'lucide-react';
+export default ChatInterface;
