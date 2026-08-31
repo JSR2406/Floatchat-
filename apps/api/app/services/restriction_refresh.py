@@ -132,7 +132,7 @@ class DynamicRestrictionService:
     async def refresh(self, now: Optional[datetime] = None) -> Dict[str, Any]:
         now = now or utcnow()
         summary = {"at": now.isoformat(), "sources": [], "inserted": 0,
-                   "updated": 0, "expired": 0}
+                   "updated": 0, "changed": 0, "expired": 0}
         refreshed_sources: List[str] = []
         for adapter in self.adapters:
             source = adapter.source_name()
@@ -146,6 +146,7 @@ class DynamicRestrictionService:
                 "source": source, "fetched": len(items), **counts})
             summary["inserted"] += counts["inserted"]
             summary["updated"] += counts["updated"]
+            summary["changed"] += counts.get("changed", 0)
         expired = await self.store.expire_unrefreshed(
             refreshed_sources, at=now, grace_seconds=self.refresh_grace_seconds)
         summary["expired"] = expired

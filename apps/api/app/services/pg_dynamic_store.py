@@ -12,7 +12,7 @@ from sqlalchemy import select, update
 from app.db.client import get_session
 from app.db.models import DynamicRestriction as DynamicRestrictionModel
 from app.db.marine_repository import active_window
-from app.models.dynamic_restrictions import DynamicRestriction
+from app.models.dynamic_restrictions import DynamicRestriction, detect_changes
 from app.services.dynamic_restriction_store import DynamicRestrictionStore
 
 
@@ -40,7 +40,7 @@ class PgDynamicRestrictionStore(DynamicRestrictionStore):
     async def upsert_many(self, items, fetched_at=None):
         fetched_at = fetched_at or datetime.utcnow()
         async with self.session_factory() as session:
-            inserted = updated = 0
+            inserted = updated = changed = 0
             for item in items:
                 row = (await session.execute(
                     select(DynamicRestrictionModel).where(
@@ -61,7 +61,8 @@ class PgDynamicRestrictionStore(DynamicRestrictionStore):
                     "description": item.description,
                     "metadata_json": item.metadata,
                     "refreshed_at": fetched_at,
-                    "expired": False,
+                    "expired": item.expired,
+                    "cancelled": item.cancelled,
                     "geometry": json.dumps(item.geometry),
                 }
                 if row is None:
@@ -70,13 +71,18 @@ class PgDynamicRestrictionStore(DynamicRestrictionStore):
                         ingested_at=fetched_at, **payload))
                     inserted += 1
                 else:
+                    old = self._to_dataclass(row)
+                    fields = detect_changes(old, item)
+                    if fields:
+                        payload["updated_at"] = fetched_at
+                        changed += 1
                     await session.execute(
                         update(DynamicRestrictionModel)
                         .where(DynamicRestrictionModel.id == row.id)
                         .values(**payload))
                     updated += 1
             await session.commit()
-        return {"inserted": inserted, "updated": updated}
+        return {"inserted": inserted, "updated": updated, "changed": changed}
 
     async def list_active(self, at=None):
         at = at or datetime.utcnow()
@@ -84,6 +90,7 @@ class PgDynamicRestrictionStore(DynamicRestrictionStore):
             rows = (await session.execute(
                 select(DynamicRestrictionModel).where(
                     DynamicRestrictionModel.expired.is_(False),
+                    DynamicRestrictionModel.cancelled.is_(False),
                     active_window(DynamicRestrictionModel.valid_from,
                                   DynamicRestrictionModel.valid_until, at),
                 )
@@ -135,5 +142,7 @@ class PgDynamicRestrictionStore(DynamicRestrictionStore):
             metadata=row.metadata_json or {},
             ingested_at=row.ingested_at,
             refreshed_at=row.refreshed_at,
+            updated_at=row.updated_at,
             expired=row.expired,
+            cancelled=row.cancelled,
         )

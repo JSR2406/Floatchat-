@@ -47,7 +47,17 @@ class WarningStatus(str, Enum):
     ACTIVE = "active"
     UPCOMING = "upcoming"
     EXPIRED = "expired"
+    CANCELLED = "cancelled"
     UNKNOWN = "unknown"
+
+
+# Statuses that never bind a route / query.  Expired and cancelled advisories
+# are authoritative *closures* that must not remain in the active view.
+NON_BINDING_STATUSES = frozenset({
+    WarningStatus.EXPIRED,
+    WarningStatus.CANCELLED,
+    WarningStatus.UNKNOWN,
+})
 
 
 def evaluate_window_status(valid_from: Optional[datetime],

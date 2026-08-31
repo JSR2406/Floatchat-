@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from app.models.common import utcnow
-from app.models.dynamic_restrictions import DynamicRestriction
+from app.models.dynamic_restrictions import DynamicRestriction, detect_changes
 from app.models.warnings import WarningStatus
 
 
@@ -19,7 +19,12 @@ class DynamicRestrictionStore(ABC):
     async def upsert_many(
         self, items: List[DynamicRestriction], fetched_at: Optional[datetime] = None
     ) -> Dict[str, int]:
-        """Insert or update; returns {inserted, updated}."""
+        """Insert or update; returns {inserted, updated, changed}.
+
+        `changed` counts refreshed records whose safety-relevant fields
+        (geometry/validity/severity/description/status) differed from the
+        stored row, so a source edit is detected, never blindly appended.
+        """
 
     @abstractmethod
     async def list_active(
@@ -53,20 +58,27 @@ class InMemoryDynamicRestrictionStore(DynamicRestrictionStore):
         fetched_at = fetched_at or utcnow()
         inserted = 0
         updated = 0
+        changed = 0
         for item in items:
             key = item.natural_key()
             if key in self._rows:
+                old = self._rows[key]
                 item.refreshed_at = fetched_at
-                self._rows[key] = item
                 if not item.expired:
                     item.expired = False
+                if not item.cancelled:
+                    item.cancelled = False
+                self._rows[key] = item
                 updated += 1
+                if detect_changes(old, item):
+                    changed += 1
+                    item.updated_at = fetched_at
             else:
                 item.ingested_at = fetched_at
                 item.refreshed_at = fetched_at
                 self._rows[key] = item
                 inserted += 1
-        return {"inserted": inserted, "updated": updated}
+        return {"inserted": inserted, "updated": updated, "changed": changed}
 
     async def list_active(self, at=None):
         at = at or utcnow()

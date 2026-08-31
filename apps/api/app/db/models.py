@@ -452,6 +452,8 @@ class DynamicRestriction(Base):
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
     refreshed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     expired: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    cancelled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint(
