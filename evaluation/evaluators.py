@@ -244,7 +244,8 @@ def check_twoturn_still_restricted(case: Case) -> CheckResult:
 
 
 _WHITELIST = {"event", "request_id", "conversation_id", "timestamp", "status",
-              "data", "data_keys", "limit", "plan_id", "task_id"}
+              "data", "data_keys", "limit", "plan_id", "task_id", "run_id",
+              "event_schema_version"}
 _SANITIZED_EVENTS = {
     "execution.started", "intent.detected", "plan.created", "task.started",
     "tool.started", "tool.completed", "task.completed", "verification.started",

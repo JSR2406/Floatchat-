@@ -4,20 +4,23 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db.client import init_db, close_db, get_session
-from app.routers import chat, profiles, voice, health, anomalies, scenarios, risk, exports, datasets, query_runs, marine, mcp, orchestrate
+from app.logging_config import setup_logging
+from app.contracts.errors import ErrorCode, ErrorResponse
+from app.contracts.versions import contract_meta
+from app.middleware.correlation import CorrelationMiddleware
+from app.middleware.ratelimit import RateLimitMiddleware
+from app.routers import chat, profiles, voice, health, anomalies, scenarios, risk, exports, datasets, query_runs, marine, mcp, orchestrate, readiness
 from app.datasources.registry import build_registry
 from app.ingestion import IngestionPipeline, SourcePollingScheduler
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.log_level),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Phase 10: structured logging (JSON binary-configurable via log_format).
+setup_logging(settings.log_format, settings.log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +69,8 @@ app = FastAPI(
     redoc_url="/redoc" if settings.log_level == "DEBUG" else None,
 )
 
-# CORS
+# CORS - explicit origins only.  Credentials are enabled, so a wildcard
+# allow_origins is NEVER used (would defeat the Same-Origin policy).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -75,8 +79,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Phase 10 edge guards + correlation.  Added last so they are outermost and
+# wrap every route (including rate-limited responses).
+app.add_middleware(RateLimitMiddleware, rpm=settings.rate_limit_rpm)
+app.add_middleware(CorrelationMiddleware)
+
 # Include routers
 app.include_router(health.router)
+app.include_router(readiness.router)
 app.include_router(chat.router)
 app.include_router(profiles.router)
 app.include_router(voice.router)
@@ -91,10 +101,11 @@ app.include_router(mcp.router)
 app.include_router(orchestrate.router)
 
 
-# Global exception handler
+# Global exception handler - returns a generic envelope and never leaks stack
+# traces.  The full internal error is captured in structured logs instead.
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    logger.exception(f"Unhandled exception: {exc}")
+    logger.exception("Unhandled exception (path=%s)", request.url.path)
     return JSONResponse(
         status_code=500,
         content={
@@ -102,20 +113,61 @@ async def global_exception_handler(request, exc):
             "title": "Internal Server Error",
             "status": 500,
             "detail": "An unexpected error occurred",
-            "instance": str(request.url),
+            "instance": request.url.path,
         },
     )
 
 
-# Root endpoint
+# Request validation handler - converts pydantic/FastAPI validation failures
+# into the structured INVALID_REQUEST contract (Part 31/40) so the frontend
+# sees a consistent error vocabulary instead of an opaque 422.
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    detail = exc.errors()
+    first = detail[0] if detail else {}
+    field = ".".join(str(p) for p in first.get("loc", []) if p not in ("body",))
+    message = first.get("msg", "invalid request").replace("Value error, ", "")
+    payload = ErrorResponse.build(
+        code=ErrorCode.INVALID_REQUEST,
+        message=f"{message} [{field}]" if field else message,
+        retryable=False, http_status=400).model_dump()
+    return JSONResponse(status_code=400, content=payload,
+                        headers={"X-Error-Code": ErrorCode.INVALID_REQUEST.value})
+
+
+# Root endpoint - advertises the stable versioned contract for discovery.
 @app.get("/")
 async def root():
+    meta = contract_meta()
     return {
         "name": "FloatChat API",
         "version": "0.1.0",
         "description": "Voice-first, multilingual, explainable AI interface for ARGO ocean data",
+        "api_version": meta["api_version"],
+        "response_schema_version": meta["response_schema_version"],
         "docs": "/docs",
         "health": "/api/v1/health",
+        "ready": "/api/v1/ready",
+        "contract": "/api/v1/contract",
+    }
+
+
+@app.get("/api/v1/contract")
+async def contract():
+    """Publishes the stable API/response/event schema versions and the list
+    of supported language / output capabilities so the frontend can adapt
+    without coupling to implementation internals."""
+    meta = contract_meta()
+    return {
+        "api_version": meta["api_version"],
+        "response_schema_version": meta["response_schema_version"],
+        "event_schema_version": meta["event_schema_version"],
+        "orchestrate": {
+            "post": "/api/v1/orchestrate",
+            "stream_ws": "/api/v1/orchestrate/stream",
+        },
+        "languages": ["en", "hi", "ta", "ml", "te"],
+        "capabilities": ["map", "charts", "alerts", "route"],
     }
 
 

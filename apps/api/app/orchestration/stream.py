@@ -113,11 +113,15 @@ class StreamEvent:
     data: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        from app.contracts.versions import contract_meta
         record: Dict[str, Any] = {"event": self.event,
                                   "request_id": self.request_id,
+                                  "run_id": self.request_id,
                                   "timestamp": self.timestamp,
                                   "status": self.status,
-                                  "data": self.data}
+                                  "data": self.data,
+                                  "event_schema_version":
+                                      contract_meta()["event_schema_version"]}
         if self.conversation_id:
             record["conversation_id"] = self.conversation_id
         if self.plan_id:
