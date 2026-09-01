@@ -116,6 +116,43 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "json"
 
+    # ------------------------------------------------------------------
+    # Phase 11 - Proactive marine intelligence & autonomous operations.
+    # ------------------------------------------------------------------
+    # Bounded proactive engine (event/alert scheduling).  One worker processes
+    # the event queue deterministically; multiple workers would duplicate work,
+    # so this must be 1 in production or run behind a leader lock.
+    proactive_enabled: bool = True
+    proactive_worker_queue_size: int = 128
+    proactive_tick_seconds: int = 60            # event/alert evaluation cadence
+    proactive_source_refresh_seconds: int = 900 # source refresh cadence
+
+    # Geofence monitoring
+    geofence_approach_km: float = 25.0          # distance at which APPROACHING fires
+    geofence_refresh_seconds: int = 120
+    geofence_max_active: int = 64               # bounded set of monitored vessels
+
+    # Restriction monitoring
+    restriction_scan_seconds: int = 300
+    restriction_max_active: int = 256
+
+    # Alert lifecycle bounds
+    alert_dedupe_window_seconds: int = 3600     # identical events deduped within
+    alert_default_ttl_seconds: int = 24 * 3600  # default validity if none given
+    alert_max_escalations: int = 3              # CAUTION->WARNING->HIGH->CRITICAL
+    alert_escalation_step_seconds: int = 3600   # min time before an escalation
+
+    # Material-change threshold (Phase 12 ML integration): do not raise an alert
+    # purely because an ML score changed by less than this (0..1).
+    alert_ml_material_change: float = 0.10
+
+    # Source health : consecutive failures that flip AVAILABLE -> FAILED.
+    source_failure_threshold: int = 3
+    source_recovery_ticks: int = 2               # successful ticks to flip RECOVERED
+
+    # User alert preferences default mode per category.
+    alert_default_mode: str = "important_only"   # immediate|important_only|digest|disabled
+
 
 @lru_cache
 def get_settings() -> Settings:

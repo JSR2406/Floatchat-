@@ -660,3 +660,106 @@ class ExecutionEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     run: Mapped["ExecutionRun"] = relationship(back_populates="events")
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 - proactive marine intelligence (events + alerts)
+# ---------------------------------------------------------------------------
+
+class MarineEventRecord(Base):
+    """Persisted normalized marine event (idempotent by event_id hash)."""
+    __tablename__ = "marine_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, default="info")
+    change_state: Mapped[str] = mapped_column(String(20), nullable=False, default="new")
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    geometry: Mapped[Optional[str]] = mapped_column(Geometry(geometry_type="GEOMETRY", srid=4326), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    previous_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    current_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    validity: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    event_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    processed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AlertRecord(Base):
+    """Persisted proactive alert with lifecycle + provenance."""
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    alert_uid: Mapped[str] = mapped_column(String(40), nullable=False, unique=True, index=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="created", index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    message: Mapped[Text] = mapped_column(Text, nullable=False)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    geometry: Mapped[Optional[str]] = mapped_column(Geometry(geometry_type="GEOMETRY", srid=4326), nullable=True)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    freshness: Mapped[str] = mapped_column(String(20), nullable=False, default="live")
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    evidence: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    escalation_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    escalated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    alert_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("idx_alerts_dedupe_created", "dedupe_key", "created_at"),
+        Index("idx_alerts_geom", "geometry", postgresql_using="gist"),
+    )
+
+
+class RestrictionLifecycle(Base):
+    """Lifecycle tracking for temporary restrictions / geofences."""
+    __tablename__ = "restriction_lifecycle"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    restriction_id: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    lifecycle_state: Mapped[str] = mapped_column(String(30), nullable=False, default="scheduled")
+    geometry: Mapped[Optional[str]] = mapped_column(Geometry(geometry_type="GEOMETRY", srid=4326), nullable=True)
+    valid_from: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="scheduled")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    restriction_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("source", "restriction_id", name="uq_restriction_lifecycle"),
+        Index("idx_restriction_lifecycle_geom", "geometry", postgresql_using="gist"),
+    )
+
+
+class UserAlertPreference(Base):
+    """Per-category alert delivery mode per user."""
+    __tablename__ = "user_alert_preferences"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    mode: Mapped[str] = mapped_column(String(30), nullable=False, default="important_only")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", name="uq_user_alert_pref"),
+    )

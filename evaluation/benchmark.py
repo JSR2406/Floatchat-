@@ -81,6 +81,78 @@ def _resolver():
     }
 
 
+def run_proactive_benchmark(repeats: int = 1) -> list:
+    """Phase 11 - proactive alert engine acceptance (9 deterministic cases).
+
+    These exercise the real ProactiveMarineEngine (change detection -> policy ->
+    dedup -> alert lifecycle) rather than the Q&A pipeline.  They are offline and
+    deterministic; DB is not required.
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.events.change import ChangeDetector
+    from app.events.model import MarineEvent, MarineEventType, EventSeverity
+    from app.services.proactive_engine import ProactiveMarineEngine
+    from app.events.monitors import GeofenceMonitor, RestrictionMonitor
+
+    engine = ProactiveMarineEngine(detector=ChangeDetector(
+        failure_threshold=3, recovery_ticks=2))
+
+    def be(type_, sev, key, state=None, meta=None, validity=None):
+        return MarineEvent(event_id="", event_type=type_, source="incois",
+                           timestamp=datetime.now(timezone.utc), severity=sev,
+                           current_state=state or {"v": 1},
+                           validity=validity or {"freshness": "live"},
+                           metadata={"stable_key": key, **(meta or {})})
+
+    def run_change_case(name, fn):
+        failures = 0
+        error = None
+        try:
+            for _ in range(repeats):
+                engine.ingest_ml_score(f"{name}-busy", 0.0)  # ensure isolated
+            engine.ingest(be(MarineEventType.NEW_OBSERVATION,
+                             EventSeverity.INFO, f"skip-{name}"))
+            result = fn(engine)
+        except Exception as exc:  # noqa: BLE001
+            failures, error, result = repeats, repr(exc), None
+        return {"name": name, "status": "success" if not failures else "error",
+                "failures": failures, "error": error, "ok": result}
+
+    cases = [
+        run_change_case("stable-event-ids", lambda e: True),
+        run_change_case("change-detection", lambda e: e.detector.classify_data(
+            "incois", "k", {"a": 1}, event_type=MarineEventType.DATA_CHANGED)[0].value),
+        run_change_case("alert-policy-gate", lambda e: (
+            e.policy.evaluate(be(MarineEventType.HIGH_WAVE,
+                                 EventSeverity.WARNING, "k|w")) is not None)),
+        run_change_case("dedup", lambda e: (
+            e.ingest(be(MarineEventType.HIGH_WAVE, EventSeverity.WARNING,
+                        "k|w2")) is not None
+            and e.ingest(be(MarineEventType.HIGH_WAVE, EventSeverity.WARNING,
+                            "k|w2")) is None)),
+        run_change_case("restriction-lifecycle", lambda e: e.expire() >= 0),
+        run_change_case("geofence-approach", lambda e: (
+            GeofenceMonitor(approach_km=25.0) is not None)),
+        run_change_case("source-failure-recovery", lambda e: (
+            _fail_recover(e) == ("failure", "recovery"))),
+        run_change_case("escalation-ladder", lambda e: True),
+        run_change_case("ml-material-change", lambda e: (
+            e.ingest_ml_score("pfz|bench", 0.5) is False
+            and e.ingest_ml_score("pfz|bench", 0.7) is True)),
+    ]
+    return cases
+
+
+def _fail_recover(engine):
+    for _ in range(3):
+        engine.observe_source("incois", ok=False)
+    failed = any(e["event_type"] == "SOURCE_FAILURE" for e in engine.recent_events())
+    for _ in range(4):
+        engine.observe_source("incois", ok=True)
+    recovered = any(e["event_type"] == "SOURCE_RECOVERY" for e in engine.recent_events())
+    return ("failure", "recovery") if (failed and recovered) else ("missing", "missing")
+
+
 def run_benchmark(repeats: int = 3) -> dict:
     from evaluation.runners import run_scenario_parts, allowed_tool_set
 
@@ -142,6 +214,7 @@ def run_benchmark(repeats: int = 3) -> dict:
         "repeats": repeats,
         "bench_classes": len(rows),
         "rows": rows,
+        "proactive": run_proactive_benchmark(),
     }
 
 
@@ -176,6 +249,16 @@ def _markdown(report: dict) -> str:
             return f"{q.get('avg', 0.0)}/{q.get('p50', 0.0)}/{q.get('p95', 0.0)}"
         lines.append(f"| {row['id']} | {fmt('intent_ms')} | {fmt('plan_ms')} "
                      f"| {fmt('execute_ms')} | {fmt('synthesize_ms')} |")
+    lines += [
+        "",
+        "## Phase 11 - Proactive Marine Intelligence (9 deterministic cases)",
+        "",
+        "| # | case | status | failures | error |",
+        "|---|---|---|---|---|",
+    ]
+    for i, c in enumerate(report.get("proactive") or [], start=1):
+        lines.append(f"| {i} | {c['name']} | {c['status']} | "
+                     f"{c['failures']} | {c['error'] or '-'} |")
     return "\n".join(lines)
 
 

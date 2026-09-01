@@ -15,9 +15,12 @@ from app.contracts.errors import ErrorCode, ErrorResponse
 from app.contracts.versions import contract_meta
 from app.middleware.correlation import CorrelationMiddleware
 from app.middleware.ratelimit import RateLimitMiddleware
-from app.routers import chat, profiles, voice, health, anomalies, scenarios, risk, exports, datasets, query_runs, marine, mcp, orchestrate, readiness
+from app.routers import chat, profiles, voice, health, anomalies, scenarios, risk, exports, datasets, query_runs, marine, mcp, orchestrate, readiness, alerts
 from app.datasources.registry import build_registry
 from app.ingestion import IngestionPipeline, SourcePollingScheduler
+from app.ingestion.proactive_scheduler import ProactiveScheduler, reset_scheduler_singleton
+from app.agents.proactive_agent import reset_proactive_singletons, get_proactive_engine
+from app.routers import alerts as alerts_router_module
 
 # Phase 10: structured logging (JSON binary-configurable via log_format).
 setup_logging(settings.log_format, settings.log_level)
@@ -30,6 +33,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting FloatChat API...")
     scheduler: SourcePollingScheduler | None = None
+    proactive: ProactiveScheduler | None = None
     try:
         await init_db()
         logger.info("Database initialized")
@@ -44,6 +48,20 @@ async def lifespan(app: FastAPI):
         app.state.scheduler_task = asyncio.create_task(scheduler.run())
         logger.info("Marine data scheduler started")
 
+    # Phase 11 - bounded proactive alert scheduler (event detection, alert
+    # evaluation, alert expiry).  It is disabled when proactively disabled.
+    if settings.proactive_enabled:
+        reset_proactive_singletons()
+        engine = get_proactive_engine()
+        proactive = ProactiveScheduler(engine)
+        app.state.proactive_scheduler = proactive
+        app.state.proactive_scheduler_task = asyncio.create_task(proactive.run())
+        alerts_router_module.bind_alert_state(type("_AlertState", (), {
+            "engine": engine,
+            "alert_repository": engine.persistence,
+        }))
+        logger.info("Proactive alert scheduler started")
+
     yield
 
     # Shutdown
@@ -51,6 +69,15 @@ async def lifespan(app: FastAPI):
     if scheduler is not None:
         await scheduler.shutdown()
         task = getattr(app.state, "scheduler_task", None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    if proactive is not None:
+        await proactive.shutdown()
+        task = getattr(app.state, "proactive_scheduler_task", None)
         if task is not None:
             task.cancel()
             try:
@@ -99,6 +126,7 @@ app.include_router(query_runs.router)
 app.include_router(marine.router)
 app.include_router(mcp.router)
 app.include_router(orchestrate.router)
+app.include_router(alerts.router)
 
 
 # Global exception handler - returns a generic envelope and never leaks stack

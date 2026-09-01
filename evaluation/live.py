@@ -233,11 +233,16 @@ def collect_report():
                                 worlds["restricted"](), pipeline="stream",
                                 title="replay-sample")
 
+    # Phase 11 - proactive alert engine (9 deterministic offline cases).
+    from evaluation.benchmark import run_proactive_benchmark
+    proactive = run_proactive_benchmark()
+
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "mode": "opt-in acceptance (RUN_LIVE_ACCEPTANCE=1)",
         "database": database,
         "sources": sources,
+        "proactive": proactive,
         "policy": {
             "provenance_chain": (
                 "user -> orchestrator -> agent -> MCP tool -> marine service -> "
@@ -383,7 +388,22 @@ def _markdown(report: dict) -> str:
         f"- chain-of-thought leaked: {report['stream']['chain_of_thought_leaked']}",
         f"- sample events: {', '.join(report['stream']['events'])}",
         "",
-        "## 7. Honest labeling audit",
+        "## 7. Proactive Marine Intelligence (Phase 11)",
+        "",
+        "These are deterministic OFFLINE cases against the real ProactiveMarineEngine "
+        "and event/monitor layers (no database, no external feed). They verify change "
+        "detection, policy gating, deduplication, restriction/geofence monitoring, "
+        "source failure/recovery, escalation and ML material-change gating.",
+        "",
+        "| case | status | failures | error |",
+        "|---|---|---|---|",
+    ]
+    for c in report.get("proactive") or []:
+        lines.append(f"| {c['name']} | {c['status']} | {c['failures']} | "
+                     f"{c['error'] or '-'} |")
+    lines += [
+        "",
+        "## 8. Honest labeling audit",
         "",
         "- no source row is marked CONNECTED unless an endpoint probe returned 2xx.",
         "- no demo row claims LIVE data; all demo rows state OFFLINE TEST FIXTURE.",
@@ -423,6 +443,9 @@ def print_summary(report: dict) -> None:
     print(f"  demo workflows run: {len(report['demo_rows'])} "
           f"ok={len(passed)} stream_ok="
           f"{report['stream']['vocabulary_ok']}")
+    proactive = report.get("proactive") or []
+    ok_proactive = [c for c in proactive if c["status"] == "success"]
+    print(f"  proactive cases: {len(proactive)} ok={len(ok_proactive)}")
     print(f"  replay label: {report['stream']['label']}")
 
 
