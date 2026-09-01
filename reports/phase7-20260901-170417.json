@@ -1,6 +1,6 @@
 {
-  "timestamp": "20260901-185135",
-  "generated_at": "2026-09-01T18:51:35.536922",
+  "timestamp": "20260901-170417",
+  "generated_at": "2026-09-01T17:04:17.023775",
   "golden": [
     {
       "case": "A-briefing",
@@ -1658,7 +1658,7 @@
         {
           "check": "bounded",
           "ok": true,
-          "detail": "calls=5 ms=0",
+          "detail": "calls=5 ms=16",
           "case": "s16-restriction-overlap",
           "title": "Multiple active constraints aggregate to a hard constraint",
           "parts": [
@@ -1847,7 +1847,7 @@
         {
           "check": "bounded",
           "ok": true,
-          "detail": "calls=5 ms=16",
+          "detail": "calls=5 ms=0",
           "case": "s22-verifier-conflict",
           "title": "Verification reflects material evidence disagreement",
           "parts": [
@@ -3127,7 +3127,7 @@
           "bounded@s13-missing-honest: OK - calls=1 ms=0",
           "bounded@s14-source-failure: OK - calls=5 ms=0",
           "bounded@s15-restriction-lifecycle: OK - calls=5 ms=0",
-          "bounded@s16-restriction-overlap: OK - calls=5 ms=0"
+          "bounded@s16-restriction-overlap: OK - calls=5 ms=16"
         ]
       },
       {

@@ -57,6 +57,10 @@ def build_tool_registry(
     # Phase 12 - production ML models (feature store + model service + drift).
     from app.mcp import tools_analytics_model
     tools_analytics_model.register(registry)
+
+    # Phase 13 - ML governance / provenance (read-only; safe for agents).
+    from app.mcp import tools_ml_governance
+    tools_ml_governance.register(registry)
     return registry
 
 

@@ -177,6 +177,41 @@ class Settings(BaseSettings):
     ml_default_confidence: float = 0.85
     ml_uncertain_confidence_threshold: float = 0.60  # below -> PREDICTION_UNCERTAIN
 
+    # ------------------------------------------------------------------
+    # Phase 13 - Continuous learning, model governance & ML provenance.
+    # ------------------------------------------------------------------
+    ml_governance_enabled: bool = True   # master switch for the governance loop
+    ml_learning_enabled: bool = True     # master switch for retraining/candidates
+
+    # Prediction ledger bounds (bounded, never unbounded growth).
+    ml_ledger_max_predictions: int = 2000
+    ml_outcome_max_entries: int = 2000
+
+    # Prediction -> outcome matching geometry (Kochi 09:00 +6h -> 15:00 hull).
+    ml_match_spatial_km: float = 25.0          # max lateral distance to match
+    ml_match_temporal_window_hours: float = 3.0  # tolerance around target_time
+
+    # Rolling evaluation windows (seconds).  daily/weekly/monthly.
+    ml_eval_histogram_daily_seconds: int = 24 * 3600
+    ml_eval_histogram_weekly_seconds: int = 7 * 24 * 3600
+    ml_eval_histogram_monthly_seconds: int = 30 * 24 * 3600
+
+    # Retraining policies.
+    ml_retrain_schedule_enabled: bool = True
+    ml_retrain_schedule_days: int = 7         # scheduled candidate cadence
+    ml_retrain_min_ground_truth: int = 30     # GT rows before a retrain is legal
+    ml_retrain_performance_degrade_mae_ratio: float = 1.25  # MAE > 1.25x baseline
+
+    # Promotion gate thresholds (candidate -> production).
+    ml_promotion_min_accuracy: float = 0.60
+    ml_promotion_min_calibration: float = 0.85
+    ml_promotion_max_latency_ms: float = 250.0
+    ml_promotion_require_safety_regression_zero: bool = True
+
+    # Ground-truth ingestion and shadow cadence.
+    ml_ground_truth_default_quality: float = 0.9  # when no explicit quality given
+    ml_shadow_enabled: bool = True          # shadow predictions recorded for challengers
+
 
 @lru_cache
 def get_settings() -> Settings:

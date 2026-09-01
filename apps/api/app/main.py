@@ -15,12 +15,13 @@ from app.contracts.errors import ErrorCode, ErrorResponse
 from app.contracts.versions import contract_meta
 from app.middleware.correlation import CorrelationMiddleware
 from app.middleware.ratelimit import RateLimitMiddleware
-from app.routers import chat, profiles, voice, health, anomalies, scenarios, risk, exports, datasets, query_runs, marine, mcp, orchestrate, readiness, alerts
+from app.routers import chat, profiles, voice, health, anomalies, scenarios, risk, exports, datasets, query_runs, marine, mcp, orchestrate, readiness, alerts, ml
 from app.datasources.registry import build_registry
 from app.ingestion import IngestionPipeline, SourcePollingScheduler
 from app.ingestion.proactive_scheduler import ProactiveScheduler, reset_scheduler_singleton
 from app.agents.proactive_agent import reset_proactive_singletons, get_proactive_engine
 from app.routers import alerts as alerts_router_module
+from app.ml.governance import reset_governance_singletons, get_governance_engine
 
 # Phase 10: structured logging (JSON binary-configurable via log_format).
 setup_logging(settings.log_format, settings.log_level)
@@ -61,6 +62,16 @@ async def lifespan(app: FastAPI):
             "alert_repository": engine.persistence,
         }))
         logger.info("Proactive alert scheduler started")
+
+    # Phase 13 - ML governance / provenance loop.  Bounded, restart-safe,
+    # never auto-deploys: it only records predictions/outcomes, runs matching,
+    # evaluation and retraining *candidates*.  Promotion stays a controlled
+    # backend operation (approval-gated), never agent-triggered.
+    if settings.ml_governance_enabled:
+        reset_governance_singletons()
+        _gov = get_governance_engine()
+        app.state.governance_engine = _gov
+        logger.info("ML governance loop started")
 
     yield
 
@@ -127,6 +138,7 @@ app.include_router(marine.router)
 app.include_router(mcp.router)
 app.include_router(orchestrate.router)
 app.include_router(alerts.router)
+app.include_router(ml.router)
 
 
 # Global exception handler - returns a generic envelope and never leaks stack

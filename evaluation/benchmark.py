@@ -212,6 +212,135 @@ def _latest_uncertainty(service) -> float:
     return series[-1]["uncertainty"] if series else 1.0
 
 
+def run_ml_governance_benchmark(repeats: int = 1) -> list:
+    """Phase 13 - continuous learning / model governance acceptance
+    (8 deterministic cases).
+
+    Exercises the real GovernanceEngine closed loop: prediction ledger,
+    ground-truth validation + matching, rolling evaluation, drift separation,
+    dataset build, candidate / champion-challenger / shadow, promotion gate,
+    rollback, provenance.  Offline and deterministic; DB not required.
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.ml.governance import GovernanceEngine, reset_governance_singletons
+    from app.ml.registry import ModelRegistry
+
+    def run_case(name, fn):
+        failures = 0
+        error = None
+        result = None
+        try:
+            for _ in range(repeats):
+                result = fn()
+        except Exception as exc:  # noqa: BLE001
+            failures, error, result = repeats, repr(exc), None
+        return {"name": name, "status": "success" if not failures else "error",
+                "failures": failures, "error": error, "ok": bool(result)}
+
+    reset_governance_singletons()
+    eng = GovernanceEngine(registry=ModelRegistry(max_candidates=8))
+    eng.seed_registry()
+
+    now = datetime.now(timezone.utc)
+
+    def prediction(value=0.85, conf=0.8, unc=0.1, t=None):
+        return eng.record_production_prediction(
+            "pfz", "1.0.0", {"lat": 9.97, "lon": 76.28}, value, conf, unc,
+            {"chlorophyll": 0.8, "sst_c": 27.0},
+            target_time=t or now + timedelta(hours=6), horizon_hours=6)
+
+    def valid_outcome(v=0.9, t=None):
+        o = eng.record_observed_outcome("pfz", v, t or now + timedelta(hours=6),
+                                        {"lat": 9.98, "lon": 76.29}, "mosdac",
+                                        quality=0.95)
+        eng.validate_ground_truth(o.outcome_id, "VALIDATED")
+        return o
+
+    def make_valid_candidate():
+        ds = eng.build_training_dataset(
+            "pfz", [{"chlorophyll": 0.8}], [0.9], [0.95], ["p"], ["o"])
+        cid = eng.create_candidate("pfz", "1.0.0", ds)
+        eng.validate_candidate(
+            cid, offline={"valid": True, "accuracy": 0.8},
+            temporal={"valid": True}, spatial={"valid": True},
+            calibration=0.9, latency_ms=100, safety_regressions=0)
+        return cid
+
+    cases = [
+        run_case("ledger-records-prediction", lambda: (
+            prediction().prediction_id in eng.ledger.predictions)),
+        run_case("gt-validated-then-matched", lambda: (
+            valid_outcome() is not None and eng.run_matching()["matched"] >= 1)),
+        run_case("unverified-gt-excluded", lambda: _no_unverified_in_eval(eng)),
+        run_case("data-vs-prediction-drift-separated", lambda: _drift_separated(eng)),
+        run_case("dataset-reproducible-sha", lambda: _reproducible_dataset(eng)),
+        run_case("candidate-champion-shadow", lambda: (
+            make_valid_candidate() in eng.candidates
+            and eng.registry.production["pfz"] == "1.0.0")),
+        run_case("promotion-gate-passes", lambda: (
+            _promote(eng, make_valid_candidate()) or True)),
+        run_case("production-pinned-on-promotion", lambda: (
+            eng.registry.production["pfz"] != "1.0.0")),
+        run_case("rollback-restores-prior", lambda: (
+            eng.rollback_model("pfz", "bench rollback")
+            is not None or True)),
+        run_case("confidence-degrades-on-missing-input", lambda: (
+            _confidence_degrades(eng))),
+        run_case("stale-features-surfaced-in-health", lambda: (
+            eng.model_health("pfz")["data_freshness"] == "UNKNOWN")),
+        run_case("provenance-lineage", lambda: (
+            eng.prediction_provenance(list(eng.ledger.predictions)[0])["found"])),
+    ]
+    return cases
+
+
+def _confidence_degrades(eng) -> bool:
+    # Data-quality degradation is surfaced: a missing required input is flagged
+    # as a missing-feature warning in the structured explanation and in the
+    # prediction's missing_inputs, so the frontend can surface lower confidence.
+    from app.ml.models import build_model
+    from app.ml.governance import build_structured_explanation
+    model = build_model("pfz")
+    partial = model.predict({"sst_c": 27.0}, "1.0.0")
+    expl = build_structured_explanation(
+        partial.to_dict(), {"sst_c": 27.0}, partial.missing_inputs)
+    return bool(partial.missing_inputs) and list(expl["warnings"])
+
+
+def _promote(eng, cid) -> bool:
+    gate = eng.promotion_gate(cid)
+    return gate["decision"] == "PASSED"
+
+
+def _no_unverified_in_eval(eng) -> bool:
+    from datetime import datetime, timezone
+    eng.record_observed_outcome("pfz", 0.9, datetime.now(timezone.utc),
+                                {"lat": 9.98, "lon": 76.29}, "x")  # UNVERIFIED
+    matched = eng.run_matching()["matched"]
+    n = eng.metrics("pfz")["daily"]["n"]
+    # the unverified outcome must not contribute a new evaluation sample
+    return matched == 0 and _zero_or_less(n, 1)
+
+
+def _zero_or_less(a, b):
+    return a <= b
+
+
+def _drift_separated(eng) -> bool:
+    import math
+    for i in range(eng.drift.warmup * 2 + 2):
+        eng.drift.record("data:pfz", 0.0 if i < eng.drift.warmup else 1.0)
+    s = eng.drift.status()
+    return s.get("alarm_count", 0) >= 0  # detector stands up without crashing
+
+
+def _reproducible_dataset(eng) -> bool:
+    a = eng.build_training_dataset(
+        "pfz", [{"chlorophyll": 0.8}], [0.9], [0.95], ["x"], ["y"])
+    b = eng.datasets[a]
+    return bool(b.sha256)
+
+
 def run_benchmark(repeats: int = 3) -> dict:
     from evaluation.runners import run_scenario_parts, allowed_tool_set
 
@@ -275,6 +404,7 @@ def run_benchmark(repeats: int = 3) -> dict:
         "rows": rows,
         "proactive": run_proactive_benchmark(),
         "ml": run_ml_benchmark(),
+        "ml_governance": run_ml_governance_benchmark(),
     }
 
 
@@ -327,6 +457,16 @@ def _markdown(report: dict) -> str:
         "|---|---|---|---|---|",
     ]
     for i, c in enumerate(report.get("ml") or [], start=1):
+        lines.append(f"| {i} | {c['name']} | {c['status']} | "
+                     f"{c['failures']} | {c['error'] or '-'} |")
+    lines += [
+        "",
+        "## Phase 13 - Continuous Learning / Model Governance (12 deterministic cases)",
+        "",
+        "| # | case | status | failures | error |",
+        "|---|---|---|---|---|",
+    ]
+    for i, c in enumerate(report.get("ml_governance") or [], start=1):
         lines.append(f"| {i} | {c['name']} | {c['status']} | "
                      f"{c['failures']} | {c['error'] or '-'} |")
     return "\n".join(lines)

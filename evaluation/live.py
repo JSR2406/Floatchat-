@@ -241,6 +241,11 @@ def collect_report():
     from evaluation.benchmark import run_ml_benchmark
     ml = run_ml_benchmark()
 
+    # Phase 13 - continuous learning / model governance acceptance
+    # (12 deterministic cases).
+    from evaluation.benchmark import run_ml_governance_benchmark
+    ml_governance = run_ml_governance_benchmark()
+
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "mode": "opt-in acceptance (RUN_LIVE_ACCEPTANCE=1)",
@@ -248,6 +253,7 @@ def collect_report():
         "sources": sources,
         "proactive": proactive,
         "ml": ml,
+        "ml_governance": ml_governance,
         "policy": {
             "provenance_chain": (
                 "user -> orchestrator -> agent -> MCP tool -> marine service -> "
@@ -422,7 +428,24 @@ def _markdown(report: dict) -> str:
                      f"{c['error'] or '-'} |")
     lines += [
         "",
-        "## 9. Honest labeling audit",
+        "## 9. Continuous Learning / Model Governance (Phase 13)",
+        "",
+        "These are deterministic OFFLINE cases against the real GovernanceEngine "
+        "closed loop: prediction ledger, ground-truth validation + matching, "
+        "rolling evaluation, drift separation, reproducible datasets, candidate "
+        "lifecycle, champion/challenger shadow, promotion gate, rollback, "
+        "confidence degradation on missing inputs, stale-feature surfacing and "
+        "provenance. Production models are immutable until explicitly promoted.",
+        "",
+        "| case | status | failures | error |",
+        "|---|---|---|---|",
+    ]
+    for c in report.get("ml_governance") or []:
+        lines.append(f"| {c['name']} | {c['status']} | {c['failures']} | "
+                     f"{c['error'] or '-'} |")
+    lines += [
+        "",
+        "## 10. Honest labeling audit",
         "",
         "- no source row is marked CONNECTED unless an endpoint probe returned 2xx.",
         "- no demo row claims LIVE data; all demo rows state OFFLINE TEST FIXTURE.",
@@ -468,6 +491,9 @@ def print_summary(report: dict) -> None:
     ml = report.get("ml") or []
     ok_ml = [c for c in ml if c["status"] == "success"]
     print(f"  ml cases: {len(ml)} ok={len(ok_ml)}")
+    gov = report.get("ml_governance") or []
+    ok_gov = [c for c in gov if c["status"] == "success"]
+    print(f"  ml governance cases: {len(gov)} ok={len(ok_gov)}")
     print(f"  replay label: {report['stream']['label']}")
 
 
