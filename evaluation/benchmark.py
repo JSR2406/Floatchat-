@@ -153,6 +153,65 @@ def _fail_recover(engine):
     return ("failure", "recovery") if (failed and recovered) else ("missing", "missing")
 
 
+def run_ml_benchmark(repeats: int = 1) -> list:
+    """Phase 12 - production ML / MLOps acceptance (6 deterministic cases).
+
+    Exercises the real ModelService (feature store -> registry -> predict ->
+    uncertainty -> provenance -> cache -> drift).  Offline and deterministic;
+    DB not required.
+    """
+    from app.ml.service import get_model_service
+
+    def run_case(name, fn):
+        failures = 0
+        error = None
+        result = None
+        try:
+            for _ in range(repeats):
+                result = fn()
+        except Exception as exc:  # noqa: BLE001
+            failures, error, result = repeats, repr(exc), None
+        return {"name": name, "status": "success" if not failures else "error",
+                "failures": failures, "error": error, "ok": bool(result)}
+
+    service = get_model_service()
+    service.seed_registry()
+
+    cases = [
+        run_case("seed-produces-all-models", lambda: len(service.status()
+                 .get("production", {})) == 4),
+        run_case("pfz-ok", lambda: service.predict(
+            "pfz", {"sst_c": 27.0, "chlorophyll": 0.8}).status == "OK"),
+        run_case("missing-input", lambda: service.predict(
+            "pfz", {"sst_c": 27.0}).status == "INPUT_DATA_UNAVAILABLE"),
+        run_case("risk-adversarial-high", lambda: (
+            service.predict("risk", {"wave_height_m": 6.0, "wind_speed_ms": 25.0})
+            .prediction.value >= 0.9)),
+        run_case("forecast-widens-uncertainty", lambda: (
+            _latest_uncertainty(service) > _first_uncertainty(service))),
+        run_case("cache-hit-flag", lambda: _cache_second(service) is True),
+    ]
+    return cases
+
+
+def _cache_second(service) -> bool:
+    service.predict("pfz", {"sst_c": 27.0, "chlorophyll": 0.8})
+    second = service.predict("pfz", {"sst_c": 27.0, "chlorophyll": 0.8})
+    return second.from_cache
+
+
+def _first_uncertainty(service) -> float:
+    series = service.predict("forecast", {"sst_c": 26.0, "chlorophyll": 0.4}) \
+        .prediction.meta.get("series", [])
+    return series[0]["uncertainty"] if series else 0.0
+
+
+def _latest_uncertainty(service) -> float:
+    series = service.predict("forecast", {"sst_c": 26.0, "chlorophyll": 0.4}) \
+        .prediction.meta.get("series", [])
+    return series[-1]["uncertainty"] if series else 1.0
+
+
 def run_benchmark(repeats: int = 3) -> dict:
     from evaluation.runners import run_scenario_parts, allowed_tool_set
 
@@ -215,6 +274,7 @@ def run_benchmark(repeats: int = 3) -> dict:
         "bench_classes": len(rows),
         "rows": rows,
         "proactive": run_proactive_benchmark(),
+        "ml": run_ml_benchmark(),
     }
 
 
@@ -257,6 +317,16 @@ def _markdown(report: dict) -> str:
         "|---|---|---|---|---|",
     ]
     for i, c in enumerate(report.get("proactive") or [], start=1):
+        lines.append(f"| {i} | {c['name']} | {c['status']} | "
+                     f"{c['failures']} | {c['error'] or '-'} |")
+    lines += [
+        "",
+        "## Phase 12 - Production ML / MLOps (6 deterministic cases)",
+        "",
+        "| # | case | status | failures | error |",
+        "|---|---|---|---|---|",
+    ]
+    for i, c in enumerate(report.get("ml") or [], start=1):
         lines.append(f"| {i} | {c['name']} | {c['status']} | "
                      f"{c['failures']} | {c['error'] or '-'} |")
     return "\n".join(lines)

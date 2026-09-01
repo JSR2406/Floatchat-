@@ -237,12 +237,17 @@ def collect_report():
     from evaluation.benchmark import run_proactive_benchmark
     proactive = run_proactive_benchmark()
 
+    # Phase 12 - production ML / MLOps acceptance (6 deterministic cases).
+    from evaluation.benchmark import run_ml_benchmark
+    ml = run_ml_benchmark()
+
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "mode": "opt-in acceptance (RUN_LIVE_ACCEPTANCE=1)",
         "database": database,
         "sources": sources,
         "proactive": proactive,
+        "ml": ml,
         "policy": {
             "provenance_chain": (
                 "user -> orchestrator -> agent -> MCP tool -> marine service -> "
@@ -403,7 +408,21 @@ def _markdown(report: dict) -> str:
                      f"{c['error'] or '-'} |")
     lines += [
         "",
-        "## 8. Honest labeling audit",
+        "## 8. Production ML / MLOps (Phase 12)",
+        "",
+        "These are deterministic OFFLINE cases against the real ModelService "
+        "(feature store -> registry -> predict -> uncertainty -> provenance -> "
+        "cache). ML is advisory and never overrides the Risk Engine.",
+        "",
+        "| case | status | failures | error |",
+        "|---|---|---|---|",
+    ]
+    for c in report.get("ml") or []:
+        lines.append(f"| {c['name']} | {c['status']} | {c['failures']} | "
+                     f"{c['error'] or '-'} |")
+    lines += [
+        "",
+        "## 9. Honest labeling audit",
         "",
         "- no source row is marked CONNECTED unless an endpoint probe returned 2xx.",
         "- no demo row claims LIVE data; all demo rows state OFFLINE TEST FIXTURE.",
@@ -446,6 +465,9 @@ def print_summary(report: dict) -> None:
     proactive = report.get("proactive") or []
     ok_proactive = [c for c in proactive if c["status"] == "success"]
     print(f"  proactive cases: {len(proactive)} ok={len(ok_proactive)}")
+    ml = report.get("ml") or []
+    ok_ml = [c for c in ml if c["status"] == "success"]
+    print(f"  ml cases: {len(ml)} ok={len(ok_ml)}")
     print(f"  replay label: {report['stream']['label']}")
 
 

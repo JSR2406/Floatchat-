@@ -10,6 +10,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        protected_namespaces=("settings_",),
     )
 
     # Database - PostgreSQL with PostGIS
@@ -152,6 +153,29 @@ class Settings(BaseSettings):
 
     # User alert preferences default mode per category.
     alert_default_mode: str = "important_only"   # immediate|important_only|digest|disabled
+
+    # ------------------------------------------------------------------
+    # Phase 12 - Production ML, Forecasting & MLOps.
+    # ------------------------------------------------------------------
+    # Feature store: keep features warm for a bounded horizon (in hours) so the
+    # store is never a stale or unbounded cache.
+    features_cache_hours: int = 24
+    ml_enabled: bool = True                     # master switch for model service
+    model_registry_max_candidates: int = 8      # bounded candidate window
+
+    # Model freshness / caching
+    ml_cache_ttl_seconds: int = 300             # prediction cache TTL (5 min)
+    ml_cache_max_entries: int = 256
+    ml_forecast_horizon_days: int = 7           # scenario forecast horizon
+
+    # Drift detection
+    ml_drift_warmup_samples: int = 50           # samples before drift checks arm
+    ml_drift_threshold: float = 0.30            # PSI/KS drift alarm threshold
+    ml_drift_ttl_seconds: int = 600             # re-check cadence
+
+    # Uncertainty budgets (conflict/uncertain outcomes)
+    ml_default_confidence: float = 0.85
+    ml_uncertain_confidence_threshold: float = 0.60  # below -> PREDICTION_UNCERTAIN
 
 
 @lru_cache

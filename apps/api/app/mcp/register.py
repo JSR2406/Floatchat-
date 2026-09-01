@@ -53,6 +53,10 @@ def build_tool_registry(
         rag=KnowledgeRagService(),
         analytics=AnalyticsService(),
     )
+
+    # Phase 12 - production ML models (feature store + model service + drift).
+    from app.mcp import tools_analytics_model
+    tools_analytics_model.register(registry)
     return registry
 
 
