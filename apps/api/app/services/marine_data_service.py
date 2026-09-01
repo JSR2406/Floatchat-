@@ -61,6 +61,21 @@ class MarineDataService:
                 out.append(source.name)
         return out
 
+    def _all_sources_mock(self, sources: List[str]) -> bool:
+        """True when every configured source for a product is a TEST-MOCK source.
+
+        Used to downgrade a computed LIVE status to TEST_MOCK so mock-only
+        results are never presented as live real-world data.
+        """
+        if not sources:
+            return False
+        if self.registry is None:
+            return False
+        for source in self.registry.list():
+            if source.is_configured and source.name in sources and not source.is_mock:
+                return False
+        return True
+
     def _validate_point(self, lat: float, lon: float) -> None:
         if not (-90 <= lat <= 90):
             raise ValueError(f"latitude out of range: {lat}")
@@ -88,6 +103,8 @@ class MarineDataService:
             )
             if status not in (DataStatus.STALE, DataStatus.UNAVAILABLE):
                 status = DataStatus.LIVE if age <= threshold else DataStatus.STALE
+            if status == DataStatus.LIVE and self._all_sources_mock(sources):
+                status = DataStatus.TEST_MOCK
         return MarineDataResult(
             status=status,
             data=data,
@@ -120,7 +137,10 @@ class MarineDataService:
             threshold = None
             age = None
             last_fetch = tr.last_successful_fetch if tr else avail.last_successful_fetch
-            if tr and tr.status in ("stale", "unavailable"):
+            if source.is_mock:
+                sstatus = DataStatus.TEST_MOCK
+                message = avail.message
+            elif tr and tr.status in ("stale", "unavailable"):
                 sstatus = DataStatus.STALE if tr.status == "stale" else DataStatus.UNAVAILABLE
                 message = tr.last_error or avail.message
             elif avail.configured:

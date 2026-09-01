@@ -88,7 +88,9 @@ def upgrade() -> None:
     op.create_index(op.f('ix_knowledge_chunks_document_id'), 'knowledge_chunks', ['document_id'], unique=False)
 
     if _is_postgresql():
-        op.execute("ALTER TABLE knowledge_chunks ALTER COLUMN embedding TYPE vector(1536)")
+        op.execute(
+            "ALTER TABLE knowledge_chunks ALTER COLUMN embedding TYPE vector(1536) "
+            "USING embedding::vector(1536)")
         op.execute(
             "CREATE INDEX idx_knowledge_chunks_embedding ON knowledge_chunks "
             "USING hnsw (embedding vector_cosine_ops)")

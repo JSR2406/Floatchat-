@@ -120,6 +120,15 @@ class MarineValidationService:
             checks.append(QualityReport(field="geometry", status=INVALID, reason="not a polygon"))
         return self._report(checks)
 
+    def classify_warning(self, record) -> Tuple[QualityStatus, List[str]]:
+        from app.models.warnings import MarineWarning
+        checks: List[QualityReport] = []
+        if not record.warning_id:
+            checks.append(QualityReport(field="warning_id", status=INVALID, reason="missing id"))
+        if not record.geometry or record.geometry.get("type") not in ("Polygon", "MultiPolygon"):
+            checks.append(QualityReport(field="geometry", status=INVALID, reason="not a polygon"))
+        return self._report(checks)
+
     def validate_geometry(self, geojson: dict) -> QualityStatus:
         try:
             from app.geo_utils import geojson_to_shape

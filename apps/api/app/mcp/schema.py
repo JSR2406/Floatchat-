@@ -15,6 +15,7 @@ from app.mcp.errors import MCPErrorCode
 STATUS_TO_CODE = {
     DataStatus.LIVE: None,
     DataStatus.RECENT: None,
+    DataStatus.TEST_MOCK: None,  # data present but explicitly sample/TEST-MOCK
     DataStatus.STALE: MCPErrorCode.SOURCE_STALE,
     DataStatus.UNAVAILABLE: MCPErrorCode.DATA_NOT_FOUND,
     DataStatus.NOT_CONFIGURED: MCPErrorCode.SOURCE_UNAVAILABLE,

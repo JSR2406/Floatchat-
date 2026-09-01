@@ -82,3 +82,88 @@ present and in default config, but feature/source is disabled until env provided
 - The runtime, when DB and live sources are unavailable, **degrades honestly**: health=degraded, readiness=not_ready, risk=UNKNOWN (never SAFE), limitations enumerated, source_status fails loudly. The Phase 14 safety hierarchy (never convert UNAVAILABLE -> SAFE) is satisfied.
 - All offline-deterministic capabilities (orchestration, agents, MCP, ML governance, proactive events/alerts, verifier, benchmarking, multilingual, multi-turn) execute against the real code and pass.
 - DB-backed and network-backed capabilities are present in code and correctly gated, but cannot be verified in this sandbox; they are reported `UNAVAILABLE`/`CONFIGURATION_REQUIRED`, never false-PASS.
+
+---
+
+## 5. Phase 14 follow-up (2026-09-02) - DB became reachable + TEST-MOCK + ARGO + voice
+
+Since the initial audit, the egress/boundary state changed: the Supabase DB is now
+reachable, so the DB-backed items were re-verified live, and the parallel work fronts
+were advanced.
+
+### 5.1 DB / schema / pgvector now verified live
+
+| Check | Result | Evidence |
+|---|---|---|
+| Supabase DB reachable | PASS | `GET /api/v1/health` -> `healthy`/`connected`; `/api/v1/ready` -> `ready:true`, db connected, orchestrator available |
+| pgvector installed | PASS | `CREATE EXTENSION vector` -> `vector 0.8.2` on the real DB |
+| Schema migrated | PASS | `alembic upgrade head` -> revision `f3d2c1b0a9e8` (initial -> marine -> restrictions -> phase6 -> phase9 -> knowledge -> evidence/pgvector); fixed one migration bug (`USING embedding::vector(1536)` cast on `knowledge_chunks.embedding`) |
+| `init_db()` | PASS | all 29 model tables present (31 public tables); `alerts`, `marine_events`, `restriction_lifecycle`, `user_alert_preferences` created via `create_all` |
+| PostGIS spatial query | PASS | `ST_Distance` Kochi->Mumbai = 1,066,628 m; `spatial_ref_sys` 8500 rows; 3 GiST spatial indexes |
+| pgvector query | PASS | cosine sim `0.00` (identical) / `1.00` (orthogonal); `knowledge_chunks.embedding` type = `vector(1536)` |
+| `sources` table | CONFIG | `knowledge.source_catalog` reports `sources=0` (reads DB `sources` table, currently empty) |
+
+### 5.2 TEST-MOCK sample data sources (approved while awaiting government API keys)
+
+A clearly-labelled deterministic **sample-data source** (`MockMarineDataSource`) was added
+so the pipeline can be demonstrated end-to-end without government keys. Hard guarantees:
+
+- `DataStatus.TEST_MOCK` added; a mock source is **never** rendered `LIVE`.
+- `is_mock` flag on the base source; `registry.status()`, `MarineDataService._source_statuses`
+  and `_render` all downgrade mock-only data to `TEST_MOCK`.
+- `tools_knowledge.source_catalog` hides the mock adapter while disabled (default off).
+- Gated by `MOCK_MARINE_ENABLED / MOCK_WEATHER_ENABLED / MOCK_WARNINGS_ENABLED` (all default false).
+
+Verified live on the reachable DB (Kochi 9.9, 76.3):
+
+```
+[ocean] status=success inserted=1      [weather_forecast] inserted=3
+[weather_observation] inserted=1       [tides] inserted=4
+[pfz] inserted=1                       [warnings] inserted=1
+[read ocean/weather/tides/pfz/warnings] result_status=test_mock  rows>0
+source_statuses: incois/imd/mosdac=not_configured, mock_marine=test_mock
+```
+
+This confirms the **`TEST_MOCK` (never `LIVE`)** invariant holds at both the per-source
+status and the per-result-status level. Real INCOIS/IMD/MOSDAC remain `NOT_CONFIGURED`.
+
+### 5.3 ARGO wiring (ingestion + tools)
+
+- `ArgoClient` (existing argopy wrapper) previously had **no write path**.
+- Added `db/argo_repository.py` (idempotent upsert on `platform_number, cycle_number`),
+  `data/argo_persist.py` (xarray Dataset -> profile/observation rows),
+  `services/argo_service.py` (search/stats/ingest_region/ingest_float),
+  `mcp/tools_argo.py` (4 tools: `argo.profile_search`, `argo.stats`,
+  `argo.ingest_region`, `argo.ingest_float`), wired into `build_tool_registry`.
+- MCP catalog now exposes **37 tools** (33 prior + 4 argo).
+- Live ARGO GDAC fetch still requires egress/key; status `CONFIGURATION_REQUIRED`
+
+  (data-plane reads work; ingestion needs reachable GDAC).
+
+### 5.4 Voice providers (STT/TTS/translation bodies implemented)
+
+- Replaced the four `NotImplementedError` bodies with real `httpx` calls:
+  Sarvam STT (`/v1/audio/speech-to-text`), Sarvam TTS (`/v1/audio/text-to-speech`),
+  ElevenLabs TTS (`/v1/text-to-speech/{voice_id}`), Google translation (`translate/v2`).
+- Providers still require keys (`STT_API_KEY`, `TTS_API_KEY`, `TRANSLATION_API_KEY`);
+  constructor raises `ValueError` when absent, so no key -> `CONFIGURATION_REQUIRED`,
+  honest and never a fake local synthesis.
+
+### 5.5 Fix: marine warning ingestion missing classifier
+
+- The pipeline's `_classify` had **no `warnings` product** entry (latent gap exposed by the
+  mock warnings adapter): any warnings ingestion failed with `KeyError('warnings')`.
+- Added `MarineValidationService.classify_warning` and wired `"warnings"` into the
+  pipeline. Warnings now ingest successfully (verified live, inserted=1).
+
+### 5.6 Remaining honest constraints (unchanged)
+
+- Live INCOIS/IMD/MOSDAC ingestion still requires government API keys (approval pending).
+- Live embeddings/LLM require `LLM_API_KEY` / `EMBEDDINGS_API_KEY` (not present in `.env`).
+- ARGO GDAC fetch needs reachable network egress from the runtime.
+- These remain `CONFIGURATION_REQUIRED`/`UNAVAILABLE`, never silent `PASS`/`LIVE`.
+
+### 5.7 Suite after additions
+
+- `pytest tests` -> **415 passed, 2 skipped** (was 406; +9 new Phase 14 unit tests).
+- `python -m evaluation` -> **52/52**, overall 100%, safety 100%.

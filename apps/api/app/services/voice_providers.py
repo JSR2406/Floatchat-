@@ -2,9 +2,13 @@
 # STT/TTS interfaces with Sarvam and ElevenLabs support
 
 import asyncio
+import base64
+import json
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -134,10 +138,49 @@ class SarvamSTTProvider(STTProvider):
         language: str,
         format: str = "wav",
     ) -> Dict[str, Any]:
-        """Transcribe audio using Sarvam AI."""
-        # Production implementation would call Sarvam API
-        # For now, raise NotImplementedError to indicate missing implementation
-        raise NotImplementedError("Sarvam STT not yet implemented. Add API integration.")
+        """Transcribe audio using Sarvam AI speech-to-text."""
+        # Sarvam STT: POST /v1/audio/speech-to-text (multipart) using the
+        # saarika model for Indian languages. Requires STT_API_KEY.
+        url = f"{self.base_url}/v1/audio/speech-to-text"
+        files = {"file": ("audio.{format}", audio_data, self._mime(format))}
+        data = {
+            "model": "saarika:v2",
+            "language_code": language,
+            "with_timestamps": "false",
+        }
+        headers = {"api-subscription-key": self.api_key}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=headers, data=data, files=files)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Sarvam STT failed (HTTP {resp.status_code}): {resp.text[:300]}")
+        payload = resp.json()
+        transcript = payload.get("transcript")
+        # Sarvam returns transcript as a string (newer) or a list of {text, timestamps}.
+        if isinstance(transcript, str):
+            text = transcript.strip()
+        elif isinstance(transcript, list):
+            text = " ".join(
+                t.get("text", "").strip() for t in transcript
+                if isinstance(t, dict) and t.get("text")
+            ).strip()
+        else:
+            text = ""
+        if not text:
+            raise RuntimeError(f"Sarvam STT returned empty transcript: {payload}")
+        return {
+            "text": text,
+            "language": language,
+            "confidence": 0.95,
+            "duration_ms": 0,
+        }
+
+    @staticmethod
+    def _mime(fmt: str) -> str:
+        return {
+            "wav": "audio/wav",
+            "mp3": "audio/mpeg",
+            "webm": "audio/webm",
+        }.get(fmt, "audio/wav")
 
     async def get_supported_languages(self) -> List[str]:
         return self._supported_languages
@@ -168,8 +211,28 @@ class SarvamTTSProvider(TTSProvider):
         voice: Optional[str] = None,
         format: str = "mp3",
     ) -> bytes:
-        """Synthesize speech using Sarvam AI."""
-        raise NotImplementedError("Sarvam TTS not yet implemented. Add API integration.")
+        """Synthesize speech using Sarvam AI text-to-speech."""
+        # Sarvam TTS: POST /v1/audio/text-to-speech, returns base64 audio.
+        url = f"{self.base_url}/v1/audio/text-to-speech"
+        body = {
+            "text": text,
+            "target_language_code": language,
+            "speaker": voice or "default",
+            "model": "bulbul:v1",
+            "audio_format": format if format in ("wav", "mp3", "pcm") else "mp3",
+            "speech_sample_rate": 8000,
+            "enable_preprocessing": True,
+        }
+        headers = {"api-subscription-key": self.api_key}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=headers, json=body)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Sarvam TTS failed (HTTP {resp.status_code}): {resp.text[:300]}")
+        payload = resp.json()
+        audio_b64 = payload.get("audio")
+        if not audio_b64:
+            raise RuntimeError(f"Sarvam TTS returned no audio: {payload}")
+        return base64.b64decode(audio_b64)
 
     async def get_supported_languages(self) -> List[str]:
         return self._supported_languages
@@ -206,7 +269,21 @@ class ElevenLabsTTSProvider(TTSProvider):
         format: str = "mp3",
     ) -> bytes:
         """Synthesize speech using ElevenLabs."""
-        raise NotImplementedError("ElevenLabs TTS not yet implemented. Add API integration.")
+        # ElevenLabs: POST /v1/text-to-speech/{voice_id} returns raw audio bytes.
+        voice_id = voice or "21m00Tcm4TlvDq8ikWAM"  # Rachel - multi-language default
+        url = f"{self.base_url}/text-to-speech/{voice_id}"
+        body = {
+            "text": text,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.6},
+            "output_format": format if format in ("mp3", "pcm", "ulaw") else "mp3",
+        }
+        headers = {"xi-api-key": self.api_key, "Accept": "audio/mpeg"}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=headers, json=body)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"ElevenLabs TTS failed (HTTP {resp.status_code}): {resp.text[:300]}")
+        return resp.content
 
     async def get_supported_languages(self) -> List[str]:
         return self._supported_languages
@@ -232,6 +309,7 @@ class GoogleTranslationProvider(TranslationProvider):
         if not api_key:
             raise ValueError("Google Cloud API key is required. Set TRANSLATION_API_KEY environment variable.")
         self.api_key = api_key
+        self.base_url = "https://translation.googleapis.com/language/translate/v2"
         self._supported_languages = COASTAL_LANGUAGE_CODES
 
     async def translate(
@@ -240,8 +318,18 @@ class GoogleTranslationProvider(TranslationProvider):
         source_lang: str,
         target_lang: str,
     ) -> str:
-        """Translate text using Google Translate."""
-        raise NotImplementedError("Google Translation not yet implemented. Add API integration.")
+        """Translate text using Google Cloud Translation (v2)."""
+        url = f"{self.base_url}?key={self.api_key}"
+        body = {"q": text, "source": source_lang.split("-")[0], "target": target_lang.split("-")[0]}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=body)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Google Translation failed (HTTP {resp.status_code}): {resp.text[:300]}")
+        payload = resp.json()
+        try:
+            return payload["data"]["translations"][0]["translatedText"]
+        except (KeyError, IndexError, TypeError):
+            raise RuntimeError(f"Google Translation returned unexpected payload: {payload}")
 
     async def detect_language(self, text: str) -> str:
         """Detect language of text using script detection."""

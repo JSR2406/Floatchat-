@@ -8,6 +8,8 @@ from app.datasources.http import HttpDataTransport
 from app.datasources.imd import IMDAdapter
 from app.datasources.incois import INCOISAdapter
 from app.datasources.mosdac import MOSDACAdapter
+from app.datasources.mock import MockMarineDataSource
+from app.models.common import DataStatus
 from app.models.source import SourceAvailability, SourceInfo, SourceStatus
 
 logger = structlog.get_logger(__name__)
@@ -25,7 +27,7 @@ class SourceRegistry:
 
     def __init__(self, settings: Settings, transport: Optional[HttpDataTransport] = None):
         self.settings = settings
-        factories = (INCOISAdapter, IMDAdapter, MOSDACAdapter)
+        factories = (INCOISAdapter, IMDAdapter, MOSDACAdapter, MockMarineDataSource)
         self._sources: Dict[str, BaseMarineDataSource] = {}
         for factory in factories:
             source = factory(settings, transport=transport)
@@ -45,7 +47,12 @@ class SourceRegistry:
         return [name for name, s in self._sources.items() if s.is_configured]
 
     def get_info(self) -> List[SourceInfo]:
-        return [s.get_info() for s in self._sources.values()]
+        # Hide disabled TEST-MOCK sources from the catalog so the default
+        # catalog lists only real providers (mock appears once enabled/demo).
+        return [
+            s.get_info() for s in self._sources.values()
+            if not (s.is_mock and not s.enabled)
+        ]
 
     def availability(self) -> Dict[str, SourceAvailability]:
         return {name: s.get_availability() for name, s in self._sources.items()}
@@ -60,7 +67,8 @@ class SourceRegistry:
             SourceStatus(
                 source=s.name,
                 source_type=s.source_type,
-                status=_status_from_availability(s.get_availability()),
+                status=(DataStatus.TEST_MOCK if s.is_mock
+                        else _status_from_availability(s.get_availability())),
                 configured=s.is_configured,
                 connected=s.is_configured,
                 message=s.get_availability().message,

@@ -73,11 +73,56 @@ The safety hierarchy (LIVE HARD RESTRICTION > RISK ENGINE > ML > RAG > LLM) was 
 - [x] Source health honesty: `source_catalog` reports configured capability; `source_status` fails loudly (DEPENDENCY_FAILURE) rather than faking LIVE.
 - [x] Safety invariants preserved: high PFZ + active restricted zone must return RESTRICTED/UNSAFE, never SAFE; UNAVAILABLE never silently converted to SAFE (verified: risk stays UNKNOWN).
 - [x] All offline-deterministic requirements executed and passed (API, MCP, agents, orchestrator, journeys, safety-critical, restrictions, multilingual, multi-turn, ML governance, proactive events, alerts, observability, failure injection).
-- [x] Full test suite 406 passed / 2 skipped; Phase 7 eval 52/52; live acceptance all OK; benchmark all success.
+- [x] Full test suite passed initially (406 pass / 2 skipped; Phase 7 eval 52/52; live acceptance all OK; benchmark all success); refreshed below to 415 pass after Phase 14 additions.
 - [x] No real integration replaced with a mock; no demo/offline fallback mislabeled as live.
-- [ ] DB/PostGIS/pgvector runtime execution — **NOT COMPLETED in this sandbox** (reported UNAVAILABLE with evidence; requires reachable PostgreSQL+PostGIS+pgvector).
-- [ ] Live marine source ingestion data pass (single real fetch) — **NOT COMPLETED** (no egress; `*_ENABLED=false`).
+- [x] DB/PostGIS/pgvector runtime execution — **validated live** in the follow-up (2026-09-02) once the Supabase DB became reachable.
+- [ ] Live government-source ingestion (single real fetch) — **NOT COMPLETED** (awaits government API key approval; `*_ENABLED=false`).
+
+### 5.1 Phase 14 follow-up (2026-09-02): DB reachable + TEST-MOCK + ARGO + voice
+
+The boundary state changed after the initial report: the Supabase DB became reachable and the
+DB-backed items were verified live, and the code-only work fronts were advanced. See
+`docs/phase14-runtime-audit.md` section 5 for full, cumulative evidence. Summary:
+
+- **DB / migrations / PostGIS / pgvector now PASS (live).** pgvector `0.8.2` installed; `alembic
+  upgrade head` -> `f3d2c1b0a9e8`; 29 model tables present; `ST_Distance` verified; `embedding`
+  type `vector(1536)`; cosine distance verified.
+- **TEST-MOCK sample marine source added (evaluation only).** `MockMarineDataSource` emits
+  deterministic sample data gated by `MOCK_*_ENABLED` (default off), is hard-labelled
+  `TEST_MOCK` (never `LIVE`) at both per-source and per-result status. Verified live:
+  all six products ingest and read back with `result_status=test_mock` while real
+  INCOIS/IMD/MOSDAC remain `not_configured`. This is **sample/demo data**, not real
+  government-source ingestion.
+- **ARGO wired for ingestion + tools.** `argo_repository`, `argo_persist` (Dataset->rows),
+  `ArgoService`, and 4 `argo.*` MCP tools; MCP catalog now 37 tools. Live GDAC fetch still needs
+  egress -> `CONFIGURATION_REQUIRED`.
+- **Voice STT/TTS/translation bodies implemented** (real `httpx` calls for Sarvam STT/TTS,
+  ElevenLabs TTS, Google translate). Requires keys; absent key -> `ValueError` at construction
+  -> `CONFIGURATION_REQUIRED`, never a fake local synthesis.
+- **Fix:** `MarineValidationService.classify_warning` added + wired into the pipeline, fixing a
+  latent `KeyError('warnings')` that blocked warnings ingestion.
+- **Suites after additions:** `pytest tests` -> **415 passed, 2 skipped** (+9 new unit tests);
+  `python -m evaluation` -> **52/52** (overall 100%, safety 100%).
+
+**DoD deltas from this follow-up:**
+- [x] DB / PostGIS / pgvector runtime execution — **now PASS (live)** on the reachable Supabase DB.
+- [x] Pipeline exercised end-to-end with a real DB — **via clearly-labelled TEST-MOCK sample data**
+  (not fabricated as live; the mock status invariant was verified).
+- [ ] Live government-source ingestion (single real INCOIS/IMD/MOSDAC fetch) — **still NOT
+  COMPLETED** (awaits government API key approval + reachable egress). ARGO GDAC live fetch and
+  live voice/LLM calls likewise remain `CONFIGURATION_REQUIRED` until keys/egress exist.
 
 ## 6. Recommended next step to complete remaining checks
 
-Provision a reachable PostgreSQL 16+ with PostGIS 3 and pgvector (local or hosted), set `DATABASE_URL`, run `alembic upgrade head` + `init_db()`, enable `INCOIS_*` (and optionally IMD/MOSDAC), re-run `python -m evaluation.benchmark`, `python -m evaluation.live`, and `pytest`. Then those rows move from UNAVAILABLE to PASS and this report should be updated accordingly.
+The DB/PostGIS/pgvector row is now **PASS** (verified live on the reachable Supabase DB;
+see section 5.1). The only remaining checks are the live data-plane integrations:
+
+1. Obtain real government API keys (INCOIS, IMD, MOSDAC) and set `INCOIS_ENABLED/IMD_ENABLED/
+   MOSDAC_ENABLED=true` with keys — this moves live marine-source ingestion to PASS
+   (currently `CONFIGURATION_REQUIRED`).
+2. Ensure runtime network egress and set `LLM_API_KEY` / `EMBEDDINGS_API_KEY` /
+   `STT_API_KEY` / `TTS_API_KEY` / `TRANSLATION_API_KEY` for live LLM/embedding/voice calls.
+3. ARGO GDAC fetch (`argo.ingest_region/float`) needs reachable egress to the GDAC; until
+   then ARGO remains `CONFIGURATION_REQUIRED` (reads work once rows are persisted).
+4. Re-run `python -m evaluation.benchmark`, `python -m evaluation.live`, and `pytest` after
+   enabling any of these to confirm the newly-live rows move to PASS with evidence.

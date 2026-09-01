@@ -106,3 +106,16 @@ so steps 1-3 DB/ingestion could not be exercised live. Those are reported
 `UNAVAILABLE` / `CONFIGURATION_REQUIRED` in `docs/phase14-runtime-audit.md` and
 `docs/phase14-e2e-acceptance-report.md`; all offline-runnable steps above were
 executed and verified.
+
+### 10.1 Follow-up (2026-09-02): DB live + TEST-MOCK demo path
+
+The Supabase DB became reachable. `alembic upgrade head` -> `f3d2c1b0a9e8` applied;
+pgvector `0.8.2` present; `init_db()` created the 29 model tables. Health now reports
+healthy/connected; readiness reports ready. The pipeline was exercised end-to-end with
+**TEST-MOCK** sample data (`MOCK_*_ENABLED=true`) which ingests/reads with
+`result_status=test_mock` (never `LIVE`); real INCOIS/IMD/MOSDAC remain
+`not_configured`. ARGO now has a write path + 4 MCP tools (37 total); voice
+STT/TTS/translation bodies implemented. Full updated matrix in
+`docs/phase14-runtime-audit.md` section 5 and `docs/phase14-e2e-acceptance-report.md`
+section 5.1. Live government-source/LLM/embedding/voice calls still require API keys +
+egress (`CONFIGURATION_REQUIRED`).

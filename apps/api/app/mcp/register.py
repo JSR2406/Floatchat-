@@ -8,6 +8,7 @@ from app.services.geospatial_service import GeospatialService
 from app.services.marine_data_service import MarineDataService
 
 from app.mcp import (
+    tools_argo,
     tools_decision,
     tools_geospatial,
     tools_knowledge,
@@ -40,6 +41,10 @@ def build_tool_registry(
     tools_marine.register(registry, marine)
     tools_weather.register(registry, marine)
     tools_geospatial.register(registry, geo)
+
+    from app.services.argo_service import ArgoService
+    argo = ArgoService(get_session)
+    tools_argo.register(registry, argo)
 
     from app.services.restriction_refresh import DynamicRestrictionService
     dynamic_service = DynamicRestrictionService()

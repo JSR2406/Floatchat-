@@ -27,6 +27,7 @@ class DataStatus(str, Enum):
     - UNAVAILABLE: no data for the query
     - NOT_CONFIGURED: source has no credentials/endpoint configured
     - ERROR: query/ingestion error
+    - TEST_MOCK: synthetic/sample data used for evaluation only (never LIVE)
     """
     LIVE = "live"
     RECENT = "recent"
@@ -34,6 +35,7 @@ class DataStatus(str, Enum):
     UNAVAILABLE = "unavailable"
     NOT_CONFIGURED = "not_configured"
     ERROR = "error"
+    TEST_MOCK = "test_mock"
 
 
 class GeographicPoint(BaseModel):

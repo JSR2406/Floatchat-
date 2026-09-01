@@ -88,6 +88,7 @@ class IngestionPipeline:
             "weather_forecast": self.classifier.classify_weather_forecast,
             "tides": self.classifier.classify_tide,
             "pfz": self.classifier.classify_pfz,
+            "warnings": self.classifier.classify_warning,
         }[product]
         quality, _reasons = method(record)
         return quality

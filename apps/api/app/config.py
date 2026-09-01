@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     mosdac_api_key: str = ""
     mosdac_enabled: bool = False
 
+    # TEST-MOCK / sample data sources (evaluation only, never LIVE).
+    # Synthetic marine data used to exercise the pipeline until real
+    # government API keys are approved.  Report explicitly as TEST_MOCK.
+    mock_marine_enabled: bool = False
+    mock_weather_enabled: bool = False
+    mock_warnings_enabled: bool = False
+
     # Data acquisition behaviour
     data_timeout_seconds: float = 30.0
     data_retry_limit: int = 3

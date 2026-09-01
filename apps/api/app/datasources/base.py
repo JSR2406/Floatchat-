@@ -51,6 +51,11 @@ class BaseMarineDataSource(ABC):
     source_type: SourceType = SourceType.UNKNOWN
     default_base_url: str = ""
 
+    # TEST-MOCK flag: subclass overrides to True for synthetic/sample sources.
+    # Such sources never report LIVE - only TEST_MOCK - so mocks are never
+    # passed off as real ingestion.
+    is_mock: bool = False
+
     # Product -> endpoint path mapping.  Unknown products have no entry, and
     # fetching them raises SourceNotConfiguredError until a real endpoint is
     # provided (honest "configuration required" - no fabricated URLs).
@@ -141,6 +146,15 @@ class BaseMarineDataSource(ABC):
 
     # -- availability --------------------------------------------------------
     def get_availability(self) -> SourceAvailability:
+        if self.is_mock:
+            return SourceAvailability(
+                source=self.name,
+                configured=self.is_configured,
+                connected=self.is_configured,
+                message=(f"Source '{self.name}' provides TEST-MOCK (sample) data only; "
+                         f"it is never LIVE. Enable it only to exercise the pipeline "
+                         f"until real source credentials are approved."),
+            )
         if not self.is_configured:
             return SourceAvailability(
                 source=self.name,
